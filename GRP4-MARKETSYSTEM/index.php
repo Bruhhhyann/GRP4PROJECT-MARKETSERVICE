@@ -143,6 +143,66 @@ try {   // the home page still loads even if the database is off
   <footer class="site-footer">
     <span>&copy; <?= date('Y') ?> <?= SITE_NAME ?>. Shop with us. Grow with us.</span>
   </footer>
+  <script>
+    
+// ACCESS THROUGH ADNROID AND IOS
+const menuToggle = document.getElementById("menuToggle");
+const navLinks = document.getElementById("navLinks");
+
+// Toggle menu
+menuToggle.addEventListener("click", function () {
+
+    navLinks.classList.toggle("active");
+
+    const isOpen = navLinks.classList.contains("active");
+
+    menuToggle.setAttribute("aria-expanded", isOpen);
+
+});
+
+// Close menu when clicking a navigation link
+document.querySelectorAll(".nav-links a").forEach(link => {
+
+    link.addEventListener("click", function () {
+
+        navLinks.classList.remove("active");
+
+        menuToggle.setAttribute("aria-expanded", "false");
+
+    });
+
+});
+
+// Close menu when clicking outside
+document.addEventListener("click", function (event) {
+
+    if (
+        !menuToggle.contains(event.target) &&
+        !navLinks.contains(event.target)
+    ) {
+
+        navLinks.classList.remove("active");
+
+        menuToggle.setAttribute("aria-expanded", "false");
+
+    }
+
+});
+
+// Close menu when resizing to desktop
+window.addEventListener("resize", function () {
+
+    if (window.innerWidth > 768) {
+
+        navLinks.classList.remove("active");
+
+        menuToggle.setAttribute("aria-expanded", "false");
+
+    }
+
+});
+
+  </script>
 
 </body>
 </html>
