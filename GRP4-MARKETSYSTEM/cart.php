@@ -11,7 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $qty = max(1, min(99, (int)($_POST['quantity'] ?? 1)));
     $comment = mb_substr(trim($_POST['comment'] ?? ''), 0, 300);
 
-    $sizeLabel = '';
+    $sizeLabel = ''; $colorLabel = '';
     if ($act === 'add' || $act === 'buy') {
         $st = db()->prepare('SELECT * FROM products WHERE id = ? AND is_active = 1 AND stock > 0');
         $st->execute([$pid]);
@@ -19,14 +19,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$prod) { flash('That product is not available.'); header('Location: shop.php'); exit; }
         [$sizeLabel, $sizeErr] = validate_size($prod['category'], trim($_POST['size'] ?? ''), trim($_POST['width'] ?? ''));
         if ($sizeErr) { flash($sizeErr); header('Location: product.php?id=' . $pid); exit; }
+        [$colorLabel, $colorErr] = validate_color($prod, trim($_POST['color'] ?? ''));
+        if ($colorErr) { flash($colorErr); header('Location: product.php?id=' . $pid); exit; }
     }
     if ($act === 'add') {
-        db()->prepare('INSERT INTO cart_items (user_id, product_id, quantity, comment, size) VALUES (?,?,?,?,?)
+        db()->prepare('INSERT INTO cart_items (user_id, product_id, quantity, comment, size, color) VALUES (?,?,?,?,?,?)
                        ON DUPLICATE KEY UPDATE quantity = quantity + VALUES(quantity), comment = IF(VALUES(comment) <> "", VALUES(comment), comment)')
-            ->execute([$uid, $pid, $qty, $comment ?: null, $sizeLabel]);
+            ->execute([$uid, $pid, $qty, $comment ?: null, $sizeLabel, $colorLabel]);
         flash('Added to your cart.');
     } elseif ($act === 'buy') {
-        [$n, $err] = place_order($uid, [['product_id' => $pid, 'qty' => $qty, 'comment' => $comment, 'size' => $sizeLabel]]);
+        [$n, $err] = place_order($uid, [['product_id' => $pid, 'qty' => $qty, 'comment' => $comment, 'size' => $sizeLabel, 'color' => $colorLabel]]);
         if ($err) { flash($err); header('Location: product.php?id=' . $pid); exit; }
         flash('Order sent! The seller needs to approve it. You can follow it here.');
         header('Location: orders.php'); exit;
@@ -42,7 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $ids = array_values(array_filter(array_map('intval', (array)($_POST['selected'] ?? []))));
         if (!$ids) { flash('Tick at least one item to order.'); header('Location: cart.php'); exit; }
         $in = implode(',', array_fill(0, count($ids), '?'));
-        $rows = db()->prepare("SELECT product_id, quantity AS qty, comment, size FROM cart_items WHERE user_id = ? AND id IN ($in)");
+        $rows = db()->prepare("SELECT product_id, quantity AS qty, comment, size, color FROM cart_items WHERE user_id = ? AND id IN ($in)");
         $rows->execute(array_merge([$uid], $ids));
         [$n, $err] = place_order($uid, $rows->fetchAll());
         if ($err) { flash($err); header('Location: cart.php'); exit; }
@@ -53,7 +55,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     header('Location: cart.php'); exit;
 }
 
-$st = db()->prepare('SELECT c.id AS item_id, c.quantity, c.comment AS note, c.size AS size, pr.* FROM cart_items c
+$st = db()->prepare('SELECT c.id AS item_id, c.quantity, c.comment AS note, c.size AS size, c.color AS color, pr.* FROM cart_items c
                      JOIN (' . product_sql() . ') pr ON pr.id = c.product_id WHERE c.user_id = ? ORDER BY pr.seller_id, c.id DESC');
 $st->execute([$uid]);
 $items = $st->fetchAll();
@@ -101,15 +103,17 @@ $menu = client_menu();
               <div class="cart-line">
                 <input type="checkbox" class="pick cart-check" name="selected[]" value="<?= $id ?>" form="co-<?= (int)$sid ?>"
                        data-amount="<?= number_format($line, 2, '.', '') ?>" aria-label="Select <?= htmlspecialchars($i['name']) ?>">
-                <div class="cart-art" aria-hidden="true"><?= product_icon($i['category']) ?></div>
+                <div class="cart-art"><?= product_art($i) ?></div>
                 <div class="cart-info">
                   <strong><a class="plain" href="product.php?id=<?= (int)$i['id'] ?>"><?= htmlspecialchars($i['name']) ?></a></strong>
                   <span class="muted"><?= money((float)$i['price']) ?> each<?php if ($i['size']): ?> &middot; <strong>Size:</strong> <?= htmlspecialchars($i['size']) ?><?php endif; ?></span>
+                  <?php if ($i['color']): ?><span class="muted"><strong>Color:</strong> <i class="dot" style="background:<?= color_hex($i['color']) ?>"></i><?= htmlspecialchars($i['color']) ?></span><?php endif; ?>
                   <div class="cart-edit">
-                    <label>Qty
-                      <select name="quantity" form="upd-<?= $id ?>">
-                        <?php for ($n = 1; $n <= max($i['quantity'], min(20, (int)$i['stock'])); $n++): ?><option value="<?= $n ?>" <?= $n == $i['quantity'] ? 'selected' : '' ?>><?= $n ?></option><?php endfor; ?>
-                      </select></label>
+                    <div class="stepper small">
+                      <button type="button" class="step-btn" data-step="-1" aria-label="Decrease quantity">&minus;</button>
+                      <input name="quantity" type="number" min="1" max="<?= max((int)$i['quantity'], min(20, (int)$i['stock'])) ?>" value="<?= (int)$i['quantity'] ?>" form="upd-<?= $id ?>" inputmode="numeric" aria-label="Quantity">
+                      <button type="button" class="step-btn" data-step="1" aria-label="Increase quantity">+</button>
+                    </div>
                     <input class="note-input" name="comment" form="upd-<?= $id ?>" maxlength="300" placeholder="Comment for the seller" value="<?= htmlspecialchars((string)$i['note']) ?>" aria-label="Comment">
                   </div>
                   <?php if ($i['stock'] < $i['quantity']): ?><span class="form-error inline">Only <?= (int)$i['stock'] ?> in stock.</span><?php endif; ?>
@@ -143,6 +147,13 @@ $menu = client_menu();
     </main>
   </div>
   <script>
+    // + and - buttons for the quantity
+    document.querySelectorAll('.stepper').forEach(st => {
+      const q = st.querySelector('input');
+      const clamp = v => Math.min(parseInt(q.max), Math.max(1, v || 1));
+      st.querySelectorAll('.step-btn').forEach(b => b.addEventListener('click', () => { q.value = clamp((parseInt(q.value) || 1) + parseInt(b.dataset.step)); }));
+      q.addEventListener('change', () => { q.value = clamp(parseInt(q.value)); });
+    });
     // Per shop: only ticked items count toward the total and the order.
     const cur = <?= json_encode(CURRENCY) ?>;
     const fmt = n => cur + n.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});

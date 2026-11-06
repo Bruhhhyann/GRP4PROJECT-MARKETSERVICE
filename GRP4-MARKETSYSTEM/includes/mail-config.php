@@ -8,6 +8,6 @@
 
 const SMTP_HOST      = 'smtp.gmail.com';
 const SMTP_PORT      = 465;                 // SSL
-const SMTP_USER      = 'mendozabryan486@gmail.com';                  // your full Gmail address, e.g. yourname@gmail.com
-const SMTP_PASS      = 'zfswknxhdmpmzbxd';                  // the 16-letter App Password (NOT your normal password)
+const SMTP_USER      = '';                  // your full Gmail address, e.g. yourname@gmail.com
+const SMTP_PASS      = '';                  // the 16-letter App Password (NOT your normal password)
 const MAIL_FROM_NAME = 'ServiceHub';

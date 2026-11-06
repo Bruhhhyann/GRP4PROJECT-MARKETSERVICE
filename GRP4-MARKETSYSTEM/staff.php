@@ -20,6 +20,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reque
     }
     $msg = $sent ? 'Request sent. An admin must approve it before you can use it.' : 'Pick at least one new category.';
 }
+// Provider / shop photo (both product and service providers)
+ensure_shop_tables();
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['action'] ?? '', ['set_avatar', 'remove_avatar'], true) && csrf_ok()) {
+    $old = db()->prepare('SELECT photo FROM users WHERE id = ?'); $old->execute([$uid]); $old = (string)$old->fetchColumn();
+    if ($_POST['action'] === 'remove_avatar') {
+        delete_avatar($old);
+        db()->prepare('UPDATE users SET photo = "" WHERE id = ?')->execute([$uid]);
+        $msg = 'Photo removed.';
+    } else {
+        [$path, $perr] = save_avatar($_FILES['photo'] ?? ['error' => UPLOAD_ERR_NO_FILE], $uid);
+        if ($perr)        { $msg = $perr; }
+        elseif (!$path)   { $msg = 'Choose a photo first.'; }
+        else {
+            delete_avatar($old);
+            db()->prepare('UPDATE users SET photo = ? WHERE id = ?')->execute([$path, $uid]);
+            $msg = 'Photo updated.';
+        }
+    }
+}
+$myPhoto = db()->prepare('SELECT photo FROM users WHERE id = ?'); $myPhoto->execute([$uid]); $myPhoto = (string)$myPhoto->fetchColumn();
+
 $rowsCat = provider_category_rows($uid);
 $myCats  = array_keys(array_filter($rowsCat, fn($x) => $x === 'approved'));
 
@@ -50,13 +71,18 @@ if ($type === 'product') {
                     if ($r->rowCount() === 0) { $ok = false; $msg = 'Not enough stock for ' . $it['name'] . '. Update the stock or reject the order.'; break; }
                 }
                 if ($ok) {
-                    db()->prepare('UPDATE orders SET status = "approved", reviewed_at = ? WHERE id = ?')->execute([date('Y-m-d H:i:s'), $oid]);
+                    $days = max(1, min(30, (int)($_POST['delivery_days'] ?? 3)));
+                    $now  = date('Y-m-d H:i:s');
+                    db()->prepare('UPDATE orders SET status = "approved", reviewed_at = ?, approved_at = ?, delivery_days = ? WHERE id = ?')->execute([$now, $now, $days, $oid]);
                     db()->commit();
-                    $msg = 'Order #' . $oid . ' approved. Stock was updated.';
+                    $eta = date('D, M j', strtotime("+$days days"));
+                    notify((int)$o['buyer_id'], 'Good news! Your order #' . $oid . ' from ' . store_name($uid) . ' was approved. It should arrive in about ' . $days . ' day' . ($days === 1 ? '' : 's') . ' (by ' . $eta . '). Tap "Order received" when it arrives.', 'orders.php#order-' . $oid);
+                    $msg = 'Order #' . $oid . ' approved. The buyer was told it arrives in about ' . $days . ' day' . ($days === 1 ? '' : 's') . '. Stock was updated.';
                 } else { db()->rollBack(); }
             } else {
                 db()->prepare('UPDATE orders SET status = "rejected", reviewed_at = ? WHERE id = ?')->execute([date('Y-m-d H:i:s'), $oid]);
-                $msg = 'Order #' . $oid . ' rejected.';
+                notify((int)$o['buyer_id'], 'Sorry, your order #' . $oid . ' from ' . store_name($uid) . ' was rejected by the shop.', 'orders.php#order-' . $oid);
+                $msg = 'Order #' . $oid . ' rejected. The buyer was told.';
             }
 
         } elseif ($act === 'add_product') {
@@ -67,9 +93,13 @@ if ($type === 'product') {
             if ($price <= 0 || $price > 9999999)           $errors[] = 'Enter a price above 0.';
             if ($stock < 0 || $stock > 100000)             $errors[] = 'Stock must be 0 or more.';
             if (!$errors) {
-                db()->prepare('INSERT INTO products (seller_id, name, category, description, price, stock, created_at) VALUES (?,?,?,?,?,?,?)')
-                    ->execute([$uid, $n, $c, mb_substr($d, 0, 2000), $price, $stock, date('Y-m-d H:i:s')]);
-                $msg = 'Product added. It now shows in the shop.';
+                $pickedColors = implode(',', array_values(array_intersect((array)($_POST['colors'] ?? []), array_keys(color_map()))));
+                db()->prepare('INSERT INTO products (seller_id, name, category, description, price, stock, colors, created_at) VALUES (?,?,?,?,?,?,?,?)')
+                    ->execute([$uid, $n, $c, mb_substr($d, 0, 2000), $price, $stock, $pickedColors, date('Y-m-d H:i:s')]);
+                $newId = (int)db()->lastInsertId();
+                [$photoPath, $photoErr] = save_product_image($_FILES['photo'] ?? ['error' => UPLOAD_ERR_NO_FILE], $newId);
+                if ($photoPath) { db()->prepare('UPDATE products SET image = ? WHERE id = ?')->execute([$photoPath, $newId]); }
+                $msg = 'Product added. It now shows in the shop.' . ($photoErr ? ' But the photo was not saved: ' . $photoErr : '');
             }
 
         } elseif ($act === 'toggle_product') {
@@ -89,6 +119,28 @@ if ($type === 'product') {
                 $added++;
             }
             $msg = $added ? "Added $added sample products. Open the shop to see them." : 'No new sample products to add. They are already there, or your approved categories have none left.';
+
+        } elseif ($act === 'set_photo' || $act === 'remove_photo') {
+            $pid = (int)($_POST['product_id'] ?? 0);
+            $row = db()->prepare('SELECT image FROM products WHERE id = ? AND seller_id = ?');
+            $row->execute([$pid, $uid]);
+            $row = $row->fetch();
+            if (!$row) {
+                $msg = 'Product not found.';
+            } elseif ($act === 'remove_photo') {
+                delete_product_image($row['image']);
+                db()->prepare('UPDATE products SET image = "" WHERE id = ?')->execute([$pid]);
+                $msg = 'Photo removed.';
+            } else {
+                [$path, $perr] = save_product_image($_FILES['photo'] ?? ['error' => UPLOAD_ERR_NO_FILE], $pid);
+                if ($perr)       { $msg = $perr; }
+                elseif (!$path)  { $msg = 'Choose a photo first.'; }
+                else {
+                    delete_product_image($row['image']);
+                    db()->prepare('UPDATE products SET image = ? WHERE id = ?')->execute([$path, $pid]);
+                    $msg = 'Photo updated.';
+                }
+            }
 
         } elseif ($act === 'set_stock') {
             db()->prepare('UPDATE products SET stock = ? WHERE id = ? AND seller_id = ?')
@@ -110,17 +162,17 @@ if ($type === 'product') {
     $mine->execute([$uid]);
     $mine = $mine->fetchAll();
     $pendingCount = count(array_filter($orders, fn($o) => $o['status'] === 'pending'));
-    $sales = db()->prepare('SELECT COALESCE(SUM(i.price * i.quantity), 0) FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.seller_id = ? AND o.status = "approved"');
+    $sales = db()->prepare('SELECT COALESCE(SUM(i.price * i.quantity), 0) FROM order_items i JOIN orders o ON o.id = i.order_id WHERE o.seller_id = ? AND o.status IN ("approved", "delivered")');
     $sales->execute([$uid]);
     $sales = (float)$sales->fetchColumn();
 }
 
 $panelTitle = $type === 'product' ? 'Product seller' : 'Service provider';
 $menu = $type === 'product'
-    ? ['Overview' => '#overview', 'Orders to approve' => '#orders', 'Add a product' => '#add', 'My products' => '#products', 'My categories' => '#categories']
-    : ['Overview' => '#overview', 'My jobs' => '#jobs', 'My categories' => '#categories'];
-$statusLabel = ['pending' => 'Pending', 'approved' => 'Approved', 'rejected' => 'Rejected'];
-$statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', 'rejected' => 'badge-rejected'];
+    ? ['Overview' => '#overview', 'Orders to approve' => '#orders', 'Add a product' => '#add', 'My products' => '#products', 'My photo' => '#photo', 'My categories' => '#categories']
+    : ['Overview' => '#overview', 'My jobs' => '#jobs', 'My photo' => '#photo', 'My categories' => '#categories'];
+$statusLabel = ['pending' => 'Pending', 'approved' => 'Approved', 'delivered' => 'Delivered', 'rejected' => 'Rejected'];
+$statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', 'delivered' => 'badge-delivered', 'rejected' => 'badge-rejected'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -142,7 +194,7 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
         <div class="cards">
           <div class="card"><span class="stat-value"><?= $pendingCount ?></span><span>Orders to approve</span></div>
           <div class="card"><span class="stat-value"><?= count($mine) ?></span><span>Products listed</span></div>
-          <div class="card"><span class="stat-value"><?= money($sales) ?></span><span>Approved sales</span></div>
+          <div class="card"><span class="stat-value"><?= money($sales) ?></span><span>Sales (approved and delivered)</span></div>
         </div>
 
         <h2 id="orders">Orders to approve</h2>
@@ -155,7 +207,7 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
             </div>
             <ul class="order-lines">
               <?php foreach ($lines[$o['id']] ?? [] as $it): $sum += $it['price'] * $it['quantity']; ?>
-                <li><span><?= (int)$it['quantity'] ?> &times; <?= htmlspecialchars($it['name']) ?><?php if ($it['size']): ?> <span class="size-tag"><?= htmlspecialchars($it['size']) ?></span><?php endif; ?>
+                <li><span><?= (int)$it['quantity'] ?> &times; <?= htmlspecialchars($it['name']) ?><?php if ($it['size']): ?> <span class="size-tag"><?= htmlspecialchars($it['size']) ?></span><?php endif; ?><?php if ($it['color']): ?> <span class="size-tag"><i class="dot" style="background:<?= color_hex($it['color']) ?>"></i><?= htmlspecialchars($it['color']) ?></span><?php endif; ?>
                   <?php if ($it['comment']): ?><br><span class="muted">Buyer's comment: <?= htmlspecialchars($it['comment']) ?></span><?php endif; ?></span>
                   <strong><?= money($it['price'] * $it['quantity']) ?></strong></li>
               <?php endforeach; ?>
@@ -167,16 +219,21 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
                 <input type="hidden" name="csrf" value="<?= csrf() ?>">
                 <input type="hidden" name="action" value="order_review">
                 <input type="hidden" name="order_id" value="<?= (int)$o['id'] ?>">
+                <label class="days-field">Delivery in <input type="number" name="delivery_days" min="1" max="30" value="3" aria-label="Delivery days"> day(s)</label>
                 <button class="btn btn-small" name="decision" value="approve" type="submit">Approve</button>
                 <button class="btn btn-small btn-reject" name="decision" value="reject" type="submit">Reject</button>
               </form>
+            <?php elseif ($o['status'] === 'approved'): ?>
+              <p class="eta-box">Approved. Delivery in about <?= (int)$o['delivery_days'] ?: '?' ?> day(s). Waiting for the buyer to tap "Order received".</p>
+            <?php elseif ($o['status'] === 'delivered'): ?>
+              <p class="eta-box done">&#9989; Delivered<?= $o['delivered_at'] ? ' on ' . htmlspecialchars(date('M j, g:i A', strtotime($o['delivered_at']))) : '' ?>. The buyer can now rate your product.</p>
             <?php endif; ?>
           </div>
         <?php endforeach; ?>
 
         <h2 id="add">Add a product</h2>
         <?php foreach ($errors as $e): ?><p class="form-error" role="alert"><?= htmlspecialchars($e) ?></p><?php endforeach; ?>
-        <form class="card dash-form" method="post" novalidate>
+        <form class="card dash-form" method="post" enctype="multipart/form-data" novalidate>
           <input type="hidden" name="csrf" value="<?= csrf() ?>">
           <input type="hidden" name="action" value="add_product">
           <div class="form-grid">
@@ -185,7 +242,17 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
               <select id="pcat" name="category"><?php foreach ($myCats as $c): ?><option><?= htmlspecialchars($c) ?></option><?php endforeach; ?></select></div>
             <div><label for="pstock">Stock (how many available)</label><input id="pstock" name="stock" type="number" min="0" value="10" required></div>
             <div><label for="pprice">Price</label><input id="pprice" name="price" type="number" min="0.01" step="0.01" required></div>
+            <div class="full"><label for="pphoto">Product photo (JPG, PNG or WEBP, max 2 MB)</label>
+              <input id="pphoto" name="photo" type="file" accept="image/jpeg,image/png,image/webp"></div>
             <div class="full"><label for="pdesc">Description</label><textarea id="pdesc" name="description" rows="3" maxlength="2000"></textarea></div>
+            <div class="full"><span class="group-label">Colors available</span>
+              <div class="opt-chips">
+                <?php foreach (color_map() as $cn => $hex): ?>
+                  <label class="opt-chip"><input type="checkbox" name="colors[]" value="<?= htmlspecialchars($cn) ?>"><span><i class="dot" style="background:<?= $hex ?>"></i><?= htmlspecialchars($cn) ?></span></label>
+                <?php endforeach; ?>
+              </div>
+              <p class="muted">Tick the colors you sell. If you tick none, buyers see standard colors for this category.</p>
+            </div>
           </div>
           <button class="btn btn-primary btn-lg" type="submit">Add product</button>
         </form>
@@ -198,11 +265,27 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
         </form>
         <?php if (!$mine): ?><p class="muted">You have not added any products yet.</p><?php else: ?>
         <div class="table-wrap"><table class="tbl">
-          <thead><tr><th>Product</th><th>Price</th><th>Stock</th><th>Shown in shop</th><th></th></tr></thead>
+          <thead><tr><th>Product</th><th>Photo</th><th>Price</th><th>Stock</th><th>Shown in shop</th><th></th></tr></thead>
           <tbody>
           <?php foreach ($mine as $p): ?>
             <tr>
-              <td><?= product_icon($p['category']) ?> <?= htmlspecialchars($p['name']) ?></td>
+              <td><?= htmlspecialchars($p['name']) ?></td>
+              <td>
+                <div class="thumb"><?= product_art($p) ?></div>
+                <form method="post" enctype="multipart/form-data" class="photo-form">
+                  <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="set_photo">
+                  <input type="hidden" name="product_id" value="<?= (int)$p['id'] ?>">
+                  <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" aria-label="New photo" required>
+                  <button class="btn btn-small" type="submit">Change photo</button>
+                </form>
+                <?php if ($p['image']): ?>
+                  <form method="post" class="photo-form">
+                    <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="remove_photo">
+                    <input type="hidden" name="product_id" value="<?= (int)$p['id'] ?>">
+                    <button class="btn btn-small btn-reject" type="submit">Remove photo</button>
+                  </form>
+                <?php endif; ?>
+              </td>
               <td><?= money((float)$p['price']) ?></td>
               <td>
                 <form method="post" class="row-actions">
@@ -244,6 +327,25 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
           <?php endforeach; ?>
         </ul>
       <?php endif; ?>
+
+      <h2 id="photo">My photo</h2>
+      <div class="card photo-card">
+        <div class="avatar-lg"><?= avatar_art($myPhoto, $_SESSION['user']) ?></div>
+        <div>
+          <p class="muted"><?= $type === 'product' ? 'Shown next to your shop name on your product pages.' : 'Your service provider photo.' ?> JPG, PNG or WEBP, max 2 MB.</p>
+          <form method="post" enctype="multipart/form-data" class="photo-form">
+            <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="set_avatar">
+            <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" aria-label="New photo" required>
+            <button class="btn btn-small" type="submit">Change photo</button>
+          </form>
+          <?php if ($myPhoto): ?>
+            <form method="post" class="photo-form">
+              <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="remove_avatar">
+              <button class="btn btn-small btn-reject" type="submit">Remove photo</button>
+            </form>
+          <?php endif; ?>
+        </div>
+      </div>
 
       <h2 id="categories">My categories</h2>
       <div class="card">

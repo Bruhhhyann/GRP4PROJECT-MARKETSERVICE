@@ -257,11 +257,14 @@ function store_expr(string $idCol, string $nameCol): string {
     return "COALESCE((SELECT a.business_name FROM provider_applications a WHERE a.user_id = $idCol AND a.status = 'approved' ORDER BY a.id DESC LIMIT 1), NULLIF($nameCol, ''), 'Store')";
 }
 function product_sql(): string {
-    return 'SELECT p.*, ' . store_expr('p.seller_id', 'u.first_name') . ' AS store FROM products p JOIN users u ON u.id = p.seller_id';
+    return 'SELECT p.*, ' . store_expr('p.seller_id', 'u.first_name') . ' AS store, u.photo AS seller_photo,
+                   (SELECT ROUND(AVG(r.rating), 1) FROM reviews r WHERE r.product_id = p.id) AS avg_rating,
+                   (SELECT COUNT(*) FROM reviews r2 WHERE r2.product_id = p.id) AS review_count
+            FROM products p JOIN users u ON u.id = p.seller_id';
 }
 
 function ensure_shop_tables(): void {
-    if (!empty($_SESSION['shop_ready3'])) { return; }
+    if (!empty($_SESSION['shop_ready6'])) { return; }
     ensure_provider_applications_table();
     $sql = [
 "CREATE TABLE IF NOT EXISTS products (
@@ -271,7 +274,7 @@ function ensure_shop_tables(): void {
   created_at DATETIME NOT NULL, FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE CASCADE)",
 "CREATE TABLE IF NOT EXISTS cart_items (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, user_id INT UNSIGNED NOT NULL, product_id INT UNSIGNED NOT NULL,
-  quantity INT UNSIGNED NOT NULL DEFAULT 1, comment VARCHAR(300) NULL, size VARCHAR(60) NOT NULL DEFAULT '', UNIQUE KEY one_per_product_size (user_id, product_id, size),
+  quantity INT UNSIGNED NOT NULL DEFAULT 1, comment VARCHAR(300) NULL, size VARCHAR(60) NOT NULL DEFAULT '', color VARCHAR(40) NOT NULL DEFAULT '', UNIQUE KEY one_per_variant (user_id, product_id, size, color),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE)",
 "CREATE TABLE IF NOT EXISTS orders (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, buyer_id INT UNSIGNED NOT NULL, seller_id INT UNSIGNED NOT NULL,
@@ -299,7 +302,42 @@ function ensure_shop_tables(): void {
     if (db()->query("SHOW INDEX FROM cart_items WHERE Key_name = 'one_per_product'")->fetch()) {
         db()->exec('ALTER TABLE cart_items ADD UNIQUE KEY one_per_product_size (user_id, product_id, size), DROP INDEX one_per_product');
     }
-    $_SESSION['shop_ready3'] = true;
+    // Colors: which colors a product comes in, and the color chosen on cart and order lines.
+    if (!db()->query("SHOW COLUMNS FROM products LIKE 'colors'")->fetch()) {
+        db()->exec("ALTER TABLE products ADD COLUMN colors VARCHAR(200) NOT NULL DEFAULT ''");
+    }
+    foreach (['cart_items', 'order_items'] as $t) {
+        if (!db()->query("SHOW COLUMNS FROM $t LIKE 'color'")->fetch()) {
+            db()->exec("ALTER TABLE $t ADD COLUMN color VARCHAR(40) NOT NULL DEFAULT ''");
+        }
+    }
+    // Cart: one line per product + size + color
+    if (db()->query("SHOW INDEX FROM cart_items WHERE Key_name = 'one_per_product_size'")->fetch()) {
+        db()->exec('ALTER TABLE cart_items ADD UNIQUE KEY one_per_variant (user_id, product_id, size, color), DROP INDEX one_per_product_size');
+    }
+    if (!db()->query("SHOW COLUMNS FROM products LIKE 'image'")->fetch()) {
+        db()->exec("ALTER TABLE products ADD COLUMN image VARCHAR(200) NOT NULL DEFAULT ''");
+    }
+    // Delivery flow: status "delivered", delivery days, and the dates
+    $col = db()->query("SHOW COLUMNS FROM orders LIKE 'status'")->fetch();
+    if ($col && !str_contains($col['Type'], 'delivered')) {
+        db()->exec("ALTER TABLE orders MODIFY status ENUM('pending','approved','delivered','rejected') NOT NULL DEFAULT 'pending'");
+    }
+    add_column_if_missing('orders', 'delivery_days', 'TINYINT UNSIGNED NULL');
+    add_column_if_missing('orders', 'approved_at', 'DATETIME NULL');
+    add_column_if_missing('orders', 'delivered_at', 'DATETIME NULL');
+    add_column_if_missing('users', 'photo', "VARCHAR(200) NOT NULL DEFAULT ''");
+    // Reviews (live as soon as they are posted) and notifications
+    db()->exec("CREATE TABLE IF NOT EXISTS reviews (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, product_id INT UNSIGNED NOT NULL, user_id INT UNSIGNED NOT NULL, order_id INT UNSIGNED NULL,
+      rating TINYINT UNSIGNED NOT NULL, comment VARCHAR(600) NULL, created_at DATETIME NOT NULL,
+      UNIQUE KEY one_review (product_id, user_id),
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)");
+    db()->exec("CREATE TABLE IF NOT EXISTS notifications (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, user_id INT UNSIGNED NOT NULL, message VARCHAR(300) NOT NULL,
+      link VARCHAR(200) NOT NULL DEFAULT '', is_read TINYINT(1) NOT NULL DEFAULT 0, created_at DATETIME NOT NULL,
+      KEY by_user (user_id, is_read), FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)");
+    $_SESSION['shop_ready6'] = true;
 }
 
 function cart_count(): int {
@@ -328,7 +366,7 @@ function place_order(int $buyerId, array $lines): array {
         if (!$p) { continue; }
         $qty = max(1, min(99, (int)$l['qty']));
         if ($p['stock'] < $qty) { return [0, $p['stock'] > 0 ? "Only {$p['stock']} left of {$p['name']}." : "{$p['name']} is sold out."]; }
-        $bySeller[$p['seller_id']][] = [$p, $qty, mb_substr(trim((string)($l['comment'] ?? '')), 0, 300), (string)($l['size'] ?? '')];
+        $bySeller[$p['seller_id']][] = [$p, $qty, mb_substr(trim((string)($l['comment'] ?? '')), 0, 300), (string)($l['size'] ?? ''), (string)($l['color'] ?? '')];
     }
     if (!$bySeller) { return [0, 'Nothing to order.']; }
 
@@ -336,15 +374,17 @@ function place_order(int $buyerId, array $lines): array {
     $address = trim($buyer['address'] . ', ' . $buyer['city'] . ' ' . ($buyer['postal_code'] ?? ''));
     $contact = $buyer['email'] ?: ($buyer['phone'] ?? '');
 
+    $newIds = [];
     db()->beginTransaction();
     try {
         foreach ($bySeller as $sellerId => $items) {
             db()->prepare('INSERT INTO orders (buyer_id, seller_id, status, payment_method, ship_name, ship_address, ship_contact, created_at) VALUES (?,?,"pending","COD",?,?,?,?)')
                 ->execute([$buyerId, $sellerId, $name, $address, $contact, date('Y-m-d H:i:s')]);
             $oid = (int)db()->lastInsertId();
-            foreach ($items as [$p, $qty, $comment, $size]) {
-                db()->prepare('INSERT INTO order_items (order_id, product_id, name, price, quantity, comment, size) VALUES (?,?,?,?,?,?,?)')
-                    ->execute([$oid, $p['id'], $p['name'], $p['price'], $qty, $comment ?: null, $size]);
+            $newIds[$sellerId] = $oid;
+            foreach ($items as [$p, $qty, $comment, $size, $color]) {
+                db()->prepare('INSERT INTO order_items (order_id, product_id, name, price, quantity, comment, size, color) VALUES (?,?,?,?,?,?,?,?)')
+                    ->execute([$oid, $p['id'], $p['name'], $p['price'], $qty, $comment ?: null, $size, $color]);
             }
         }
         db()->commit();
@@ -352,6 +392,7 @@ function place_order(int $buyerId, array $lines): array {
         db()->rollBack();
         return [0, 'Could not place the order. Please try again.'];
     }
+    foreach ($newIds as $sid => $oid) { notify((int)$sid, "New order #$oid from $name. Open Orders to approve it.", 'staff.php#orders'); }
     return [count($bySeller), ''];
 }
 
@@ -421,4 +462,140 @@ function validate_size(string $category, string $size, string $width): array {
         $label .= ', ' . $width . ' width';
     }
     return [$label, ''];
+}
+
+// ---------- Colors ----------
+function color_map(): array {
+    return ['White' => '#ffffff', 'Black' => '#1b2430', 'Navy' => '#163a5f', 'Gray' => '#8a96a3', 'Silver' => '#c0c7cf',
+            'Red' => '#d64545', 'Pink' => '#e88fb0', 'Orange' => '#ee8a33', 'Yellow' => '#f5b83d', 'Gold' => '#d4a940',
+            'Green' => '#3f8f5b', 'Blue' => '#3b82c4', 'Purple' => '#7b5ea7', 'Brown' => '#7a4b2a', 'Tan' => '#c9a77c',
+            'Beige' => '#e3d3b8', 'Khaki' => '#bfae7f', 'Rose gold' => '#d8a496'];
+}
+function color_hex(string $name): string { return color_map()[$name] ?? '#c3cfda'; }
+
+// Used when a seller did not pick colors for a product.
+function default_colors(string $category): array {
+    return match ($category) {
+        'Shoes'       => ['White', 'Black', 'Navy', 'Brown'],
+        'Shirts'      => ['White', 'Black', 'Navy', 'Gray', 'Red'],
+        'Dresses'     => ['Black', 'Red', 'Navy', 'Beige', 'Green'],
+        'Bags'        => ['Black', 'Brown', 'Tan', 'Navy'],
+        'Caps & hats' => ['Black', 'White', 'Navy', 'Khaki'],
+        'Watches'     => ['Silver', 'Black', 'Gold', 'Brown'],
+        default       => ['Black', 'White', 'Silver'],
+    };
+}
+function product_colors(array $p): array {
+    $own = array_values(array_filter(array_map('trim', explode(',', (string)($p['colors'] ?? '')))));
+    return $own ?: default_colors((string)$p['category']);
+}
+// Returns [color, error]
+function validate_color(array $p, string $color): array {
+    return in_array($color, product_colors($p), true) ? [$color, ''] : ['', 'Please choose a color.'];
+}
+
+// ---------- Product photos ----------
+// The photo if the seller uploaded one, otherwise the category emoji.
+function product_art(array $p): string {
+    if (!empty($p['image'])) {
+        return '<img src="' . htmlspecialchars($p['image']) . '" alt="' . htmlspecialchars((string)($p['name'] ?? '')) . '" loading="lazy">';
+    }
+    return '<span>' . product_icon((string)$p['category']) . '</span>';
+}
+
+// Saves an uploaded photo into uploads/products. Returns [path, error]; path is '' when no file was chosen.
+function save_product_image(array $f, int $productId): array {
+    $err = $f['error'] ?? UPLOAD_ERR_NO_FILE;
+    if ($err === UPLOAD_ERR_NO_FILE) { return ['', '']; }
+    if ($err !== UPLOAD_ERR_OK) { return ['', 'The photo could not be uploaded. It may be bigger than 2 MB.']; }
+    if ($f['size'] > 2 * 1024 * 1024) { return ['', 'The photo is too big. Maximum is 2 MB.']; }
+    $info  = @getimagesize($f['tmp_name']);
+    $types = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp'];
+    if (!$info || !isset($types[$info[2]])) { return ['', 'The photo must be a JPG, PNG or WEBP image.']; }
+    $dir = __DIR__ . '/../uploads/products';
+    if (!is_dir($dir) && !mkdir($dir, 0775, true)) { return ['', 'Could not create the uploads folder.']; }
+    $name = 'p' . $productId . '-' . bin2hex(random_bytes(4)) . '.' . $types[$info[2]];
+    if (!move_uploaded_file($f['tmp_name'], "$dir/$name")) { return ['', 'Could not save the photo.']; }
+    return ['uploads/products/' . $name, ''];
+}
+
+function delete_product_image(string $path): void {
+    if (str_starts_with($path, 'uploads/products/')) {
+        $file = __DIR__ . '/../' . $path;
+        if (is_file($file)) { @unlink($file); }
+    }
+}
+
+// =====================================================================
+// NOTIFICATIONS, REVIEWS, PROVIDER PHOTOS
+// =====================================================================
+function add_column_if_missing(string $table, string $col, string $ddl): void {
+    if (!db()->query("SHOW COLUMNS FROM `$table` LIKE '$col'")->fetch()) {
+        db()->exec("ALTER TABLE `$table` ADD COLUMN `$col` $ddl");
+    }
+}
+
+function notify(int $uid, string $message, string $link = ''): void {
+    try {
+        db()->prepare('INSERT INTO notifications (user_id, message, link, created_at) VALUES (?,?,?,?)')
+            ->execute([$uid, mb_substr($message, 0, 300), $link, date('Y-m-d H:i:s')]);
+    } catch (Throwable $e) { error_log('notify failed: ' . $e->getMessage()); }
+}
+
+function notif_count(): int {
+    if (empty($_SESSION['user_id'])) { return 0; }
+    try {
+        ensure_shop_tables();
+        $st = db()->prepare('SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0');
+        $st->execute([$_SESSION['user_id']]);
+        return (int)$st->fetchColumn();
+    } catch (Throwable $e) { return 0; }
+}
+
+function store_name(int $sellerId): string {
+    $st = db()->prepare('SELECT ' . store_expr('u.id', 'u.first_name') . ' FROM users u WHERE u.id = ?');
+    $st->execute([$sellerId]);
+    return (string)($st->fetchColumn() ?: 'the shop');
+}
+
+// The id of a delivered order in which this client bought this product (0 = never received it, so no rating allowed).
+function delivered_order_for(int $uid, int $productId): int {
+    $st = db()->prepare('SELECT o.id FROM orders o JOIN order_items i ON i.order_id = o.id
+                         WHERE o.buyer_id = ? AND i.product_id = ? AND o.status = "delivered" ORDER BY o.id DESC LIMIT 1');
+    $st->execute([$uid, $productId]);
+    return (int)$st->fetchColumn();
+}
+
+function stars_html(float $rating): string {
+    $full = max(0, min(5, (int)round($rating)));
+    return '<span class="stars" role="img" aria-label="' . number_format($rating, 1) . ' out of 5 stars">'
+         . str_repeat('★', $full) . '<span class="off">' . str_repeat('★', 5 - $full) . '</span></span>';
+}
+
+// ----- provider / shop photo (users.photo) -----
+function avatar_art(?string $path, string $name = ''): string {
+    if ($path) { return '<img src="' . htmlspecialchars($path) . '" alt="' . htmlspecialchars($name) . '" loading="lazy">'; }
+    return '<span>' . htmlspecialchars(strtoupper(mb_substr(trim($name) !== '' ? $name : 'S', 0, 1))) . '</span>';
+}
+
+function save_avatar(array $f, int $uid): array {
+    $err = $f['error'] ?? UPLOAD_ERR_NO_FILE;
+    if ($err === UPLOAD_ERR_NO_FILE) { return ['', '']; }
+    if ($err !== UPLOAD_ERR_OK) { return ['', 'The photo could not be uploaded. It may be bigger than 2 MB.']; }
+    if ($f['size'] > 2 * 1024 * 1024) { return ['', 'The photo is too big. Maximum is 2 MB.']; }
+    $info  = @getimagesize($f['tmp_name']);
+    $types = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp'];
+    if (!$info || !isset($types[$info[2]])) { return ['', 'The photo must be a JPG, PNG or WEBP image.']; }
+    $dir = __DIR__ . '/../uploads/avatars';
+    if (!is_dir($dir) && !mkdir($dir, 0775, true)) { return ['', 'Could not create the uploads folder.']; }
+    $name = 'u' . $uid . '-' . bin2hex(random_bytes(4)) . '.' . $types[$info[2]];
+    if (!move_uploaded_file($f['tmp_name'], "$dir/$name")) { return ['', 'Could not save the photo.']; }
+    return ['uploads/avatars/' . $name, ''];
+}
+
+function delete_avatar(string $path): void {
+    if (str_starts_with($path, 'uploads/avatars/')) {
+        $file = __DIR__ . '/../' . $path;
+        if (is_file($file)) { @unlink($file); }
+    }
 }

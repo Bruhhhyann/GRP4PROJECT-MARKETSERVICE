@@ -14,6 +14,16 @@ if ($p) {
 }
 $isClient = ($_SESSION['role'] ?? '') === 'client';
 $mine = $p; // keep the main product while the card include reuses $p
+$reviews = []; $eligibleOrder = 0; $myReview = null;
+if ($p) {
+    $rv = db()->prepare('SELECT r.*, u.first_name, u.last_name FROM reviews r JOIN users u ON u.id = r.user_id WHERE r.product_id = ? ORDER BY r.created_at DESC LIMIT 50');
+    $rv->execute([$id]);
+    $reviews = $rv->fetchAll();
+    if ($isClient) {
+        $eligibleOrder = delivered_order_for((int)$_SESSION['user_id'], $id);   // 0 = never received it
+        foreach ($reviews as $rev) { if ((int)$rev['user_id'] === (int)$_SESSION['user_id']) { $myReview = $rev; } }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -33,10 +43,15 @@ $mine = $p; // keep the main product while the card include reuses $p
     <?php else: ?>
       <?php if ($m = flash()): ?><p class="form-error"><?= htmlspecialchars($m) ?></p><?php endif; ?>
       <div class="product-page">
-        <div class="detail-art" aria-hidden="true"><?= product_icon($p['category']) ?></div>
+        <div class="detail-art"><?= product_art($p) ?></div>
         <div>
           <h1><?= htmlspecialchars($p['name']) ?></h1>
-          <p class="muted">Sold by <strong><?= htmlspecialchars($p['store']) ?></strong> &middot; <?= htmlspecialchars($p['category']) ?></p>
+          <p class="muted seller-line"><span class="avatar-sm"><?= avatar_art($p['seller_photo'] ?? '', $p['store']) ?></span>
+            Sold by <strong><?= htmlspecialchars($p['store']) ?></strong> &middot; <?= htmlspecialchars($p['category']) ?></p>
+          <?php if ((int)$p['review_count'] > 0): ?>
+            <p class="rating-line"><a class="plain" href="#reviews"><?= stars_html((float)$p['avg_rating']) ?> <strong><?= number_format((float)$p['avg_rating'], 1) ?></strong>
+              <span class="muted">(<?= (int)$p['review_count'] ?> review<?= (int)$p['review_count'] === 1 ? '' : 's' ?>)</span></a></p>
+          <?php endif; ?>
           <p class="price-xl"><?= money((float)$p['price']) ?></p>
           <p><?= $p['stock'] > 0 ? '<span class="badge badge-confirmed">' . (int)$p['stock'] . ' in stock</span>' : '<span class="badge badge-rejected">Sold out</span>' ?></p>
           <h2 class="small-h">About this product</h2>
@@ -85,6 +100,16 @@ $mine = $p; // keep the main product while the card include reuses $p
                 </details>
               <?php endif; ?>
 
+              <?php $colors = product_colors($p); ?>
+              <div class="opt-group">
+                <span class="opt-label">Color</span>
+                <div class="opt-chips" role="radiogroup" aria-label="Color">
+                  <?php foreach ($colors as $col): ?>
+                    <label class="opt-chip"><input type="radio" name="color" value="<?= htmlspecialchars($col) ?>" required><span><i class="dot" style="background:<?= color_hex($col) ?>"></i><?= htmlspecialchars($col) ?></span></label>
+                  <?php endforeach; ?>
+                </div>
+              </div>
+
               <span class="opt-label">Quantity</span>
               <div class="qty-row">
                 <div class="stepper">
@@ -106,6 +131,46 @@ $mine = $p; // keep the main product while the card include reuses $p
         </div>
       </div>
 
+      <h2 class="more-h" id="reviews">Ratings and reviews</h2>
+      <?php if (isset($_GET['reviewed'])): ?><p class="form-ok">Thanks! Your review is now live for other buyers to see.</p><?php endif; ?>
+      <?php if ((int)$p['review_count'] > 0): ?>
+        <p class="review-summary"><span class="big-rating"><?= number_format((float)$p['avg_rating'], 1) ?></span> <?= stars_html((float)$p['avg_rating']) ?>
+          <span class="muted"><?= (int)$p['review_count'] ?> review<?= (int)$p['review_count'] === 1 ? '' : 's' ?></span></p>
+      <?php else: ?>
+        <p class="muted">No reviews yet.</p>
+      <?php endif; ?>
+
+      <?php if ($isClient && $eligibleOrder): ?>
+        <form class="card dash-form review-form" method="post" action="review.php">
+          <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="product_id" value="<?= (int)$p['id'] ?>">
+          <h3><?= $myReview ? 'Update your review' : 'Rate this product' ?></h3>
+          <div class="star-input" role="radiogroup" aria-label="Your rating">
+            <?php for ($i = 5; $i >= 1; $i--): ?>
+              <input type="radio" id="star<?= $i ?>" name="rating" value="<?= $i ?>" <?= $myReview && (int)$myReview['rating'] === $i ? 'checked' : '' ?> required>
+              <label for="star<?= $i ?>" title="<?= $i ?> star<?= $i === 1 ? '' : 's' ?>">&#9733;</label>
+            <?php endfor; ?>
+          </div>
+          <label for="rcomment">Your review (optional)</label>
+          <textarea id="rcomment" name="comment" rows="3" maxlength="600" placeholder="How was the quality, fit and delivery?"><?= htmlspecialchars((string)($myReview['comment'] ?? '')) ?></textarea>
+          <button class="btn btn-primary" type="submit"><?= $myReview ? 'Update review' : 'Post review' ?></button>
+          <p class="muted">Your review is shown to other buyers right away.</p>
+        </form>
+      <?php elseif ($isClient): ?>
+        <p class="review-note">&#128274; Only buyers who received this product can rate it. Buy it, then tap <strong>Order received</strong> when it arrives.</p>
+      <?php endif; ?>
+
+      <?php foreach ($reviews as $rev): ?>
+        <div class="card review">
+          <div class="review-head">
+            <?= stars_html((float)$rev['rating']) ?>
+            <strong><?= htmlspecialchars($rev['first_name'] . ' ' . mb_substr($rev['last_name'], 0, 1) . '.') ?></strong>
+            <span class="badge badge-confirmed">Verified buyer</span>
+            <span class="muted"><?= htmlspecialchars(date('M j, Y', strtotime($rev['created_at']))) ?></span>
+          </div>
+          <?php if ($rev['comment']): ?><p><?= nl2br(htmlspecialchars($rev['comment'])) ?></p><?php endif; ?>
+        </div>
+      <?php endforeach; ?>
+
       <h2 class="more-h">Other available products</h2>
       <?php if (!$others): ?>
         <p class="muted">No other products right now.</p>
@@ -125,7 +190,7 @@ $mine = $p; // keep the main product while the card include reuses $p
       q.addEventListener('change', () => { q.value = clamp(parseInt(q.value)); });
       const info = document.getElementById('size-info');
       const show = () => {
-        const parts = [...form.querySelectorAll('input[type=radio]:checked')].map(r => r.value + ': ' + r.dataset.info);
+        const parts = [...form.querySelectorAll('input[type=radio]:checked')].filter(r => r.dataset.info).map(r => r.value + ': ' + r.dataset.info);
         if (info && parts.length) info.textContent = parts.join('  |  ');
       };
       form.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', show));
