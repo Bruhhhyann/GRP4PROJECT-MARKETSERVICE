@@ -3,6 +3,7 @@ require_once __DIR__ . '/includes/bootstrap.php';
 
 $p = $_SESSION['pending_reg'] ?? null;
 if (!$p) { header('Location: register.php'); exit; }
+ensure_shop_tables();   // makes sure the ID columns exist
 
 $error = ''; $notice = '';
 
@@ -31,11 +32,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             try {
                 $dup = db()->prepare('SELECT id FROM users WHERE email = ? OR (? <> "" AND phone = ?)');
                 $dup->execute([$d['email'], $d['phone'], $d['phone']]);
-                if ($dup->fetch()) { unset($_SESSION['pending_reg']); header('Location: signin.php'); exit; }
-                db()->prepare('INSERT INTO users (role, first_name, middle_name, last_name, email, phone, password_hash, address, city, postal_code, is_verified)
-                               VALUES ("client",?,?,?,?,?,?,?,?,?,1)')
+                if ($dup->fetch()) { delete_id_photo($d['id_file'] ?? ''); unset($_SESSION['pending_reg']); header('Location: signin.php'); exit; }
+                db()->prepare('INSERT INTO users (role, first_name, middle_name, last_name, email, phone, password_hash, address, city, postal_code, id_doc_type, id_doc_file, is_verified)
+                               VALUES ("client",?,?,?,?,?,?,?,?,?,?,?,1)')
                     ->execute([$d['first_name'], $d['middle_name'] ?: null, $d['last_name'], $d['email'], $d['phone'] ?: null,
-                               $d['password_hash'], $d['address'], $d['city'], $d['postal_code'] ?: null]);
+                               $d['password_hash'], $d['address'], $d['city'], $d['postal_code'] ?: null, $d['id_type'] ?? '', $d['id_file'] ?? '']);
                 $id = (int)db()->lastInsertId();
                 $u = db()->query("SELECT * FROM users WHERE id = $id")->fetch();
                 unset($_SESSION['pending_reg'], $_SESSION['dev_code']);
@@ -56,7 +57,7 @@ $secondsLeft = max(0, $p['expires'] - time());
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Verify | ServiceHub</title>
+  <title>Verify | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>

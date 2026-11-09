@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
-require_role('client');
+require_role('client', 'staff', 'admin');
 ensure_shop_tables();
 $uid = $_SESSION['user_id'];
 
@@ -17,6 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $st->execute([$pid]);
         $prod = $st->fetch();
         if (!$prod) { flash('That product is not available.'); header('Location: shop.php'); exit; }
+        if ((int)$prod['seller_id'] === (int)$uid) { flash("You can't buy your own product."); header('Location: product.php?id=' . $pid); exit; }
         [$sizeLabel, $sizeErr] = validate_size($prod['category'], trim($_POST['size'] ?? ''), trim($_POST['width'] ?? ''));
         if ($sizeErr) { flash($sizeErr); header('Location: product.php?id=' . $pid); exit; }
         [$colorLabel, $colorErr] = validate_color($prod, trim($_POST['color'] ?? ''));
@@ -64,14 +65,14 @@ foreach ($items as $i) { $groups[$i['seller_id']]['store'] = $i['store']; $group
 $me = db()->prepare('SELECT * FROM users WHERE id = ?'); $me->execute([$uid]); $me = $me->fetch();
 
 $panelTitle = 'My account';
-$menu = client_menu();
+$menu = buyer_menu();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>My cart | ServiceHub</title>
+  <title>My cart | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>

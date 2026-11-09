@@ -418,9 +418,27 @@ a.product-img { text-decoration: none; }
 .review { margin-bottom: .7rem; max-width: 760px; gap: .3rem; }
 .review-head { display: flex; align-items: center; gap: .7rem; flex-wrap: wrap; }
 .review p { margin: .2rem 0 0; }
-.star-input { display: inline-flex; flex-direction: row-reverse; justify-content: flex-end; }
-.star-input input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.star-input label { font-size: 2.2rem; line-height: 1; color: #d3dbe3; cursor: pointer; margin: 0 !important; padding: 0 .08rem; transition: color .1s ease; }
-.star-input input:checked ~ label, .star-input label:hover, .star-input label:hover ~ label { color: var(--marigold); }
-.star-input input:focus-visible + label { outline: 3px solid var(--marigold); outline-offset: 2px; border-radius: 6px; }
 @media (max-width: 640px) { .photo-card { flex-direction: column; align-items: flex-start; } .notif { flex-direction: column; align-items: flex-start; } }
+
+/* ---------- ID upload at registration ---------- */
+.id-upload { margin-top: .6rem; padding: 1.1rem; border: 2px dashed #c3cfda; border-radius: 14px; background: var(--mist); }
+.id-upload .group-label { margin-top: 0; }
+.auth-card .choice input { width: auto; padding: 0; margin: .25rem 0 0; }
+.auth-card .choice-row { margin-bottom: .5rem; }
+.id-preview { display: block; max-width: 100%; max-height: 240px; margin: .8rem 0; border-radius: 10px; border: 1px solid var(--line); }
+.id-preview[hidden] { display: none; }
+
+/* ---------- Service providers + bookings ---------- */
+.avatar { overflow: hidden; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.chips-mini { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin: .5rem 0; }
+.chip-mini { padding: .15rem .6rem; border-radius: 999px; background: var(--mist); font-size: .8rem; }
+.provider .about { margin: .3rem 0; font-size: .9rem; }
+.provider-hero { flex-direction: row; align-items: center; gap: 1.5rem; padding: 1.5rem; }
+.provider-hero h1 { margin-bottom: .2rem; }
+.book-form { max-width: 720px; }
+.book-form select, .dash-form select { width: 100%; padding: .75rem .9rem; font: inherit; border: 1px solid #c3cfda; border-radius: 10px; background: var(--white); }
+.order-head .who { display: flex; align-items: center; gap: .7rem; }
+.stat-link { text-decoration: none; color: inherit; transition: transform .15s ease, box-shadow .15s ease; }
+.stat-link:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(14,42,71,.1); }
+@media (max-width: 640px) { .provider-hero { flex-direction: column; align-items: flex-start; } }

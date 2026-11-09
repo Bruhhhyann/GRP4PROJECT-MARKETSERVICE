@@ -33,7 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Sign in | ServiceHub</title>
+  <title>Sign in | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>

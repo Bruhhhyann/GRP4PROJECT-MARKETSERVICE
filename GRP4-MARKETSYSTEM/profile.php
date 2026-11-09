@@ -52,7 +52,7 @@ $menu = client_menu();
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>My profile | ServiceHub</title>
+  <title>My profile | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>

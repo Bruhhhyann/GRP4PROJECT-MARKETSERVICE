@@ -5,6 +5,7 @@ $_SESSION['csrf'] ??= bin2hex(random_bytes(16));
 $msg = '';
 ensure_profile_changes_table();
 ensure_provider_applications_table();
+ensure_shop_tables();   // adds the ID columns if missing
 
 // Approve or reject a profile change request
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'review') {
@@ -105,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'revie
 $counts = ['admin' => 0, 'client' => 0, 'staff' => 0];
 foreach (db()->query('SELECT role, COUNT(*) n FROM users GROUP BY role') as $r) { $counts[$r['role']] = (int)$r['n']; }
 $unverified = (int)db()->query('SELECT COUNT(*) FROM users WHERE is_verified = 0')->fetchColumn();
-$users = db()->query('SELECT id, first_name, last_name, email, phone, role, staff_type, is_verified, created_at FROM users ORDER BY id DESC LIMIT 50')->fetchAll();
+$users = db()->query('SELECT id, first_name, last_name, email, phone, role, staff_type, is_verified, id_doc_type, id_doc_file, created_at FROM users ORDER BY id DESC LIMIT 50')->fetchAll();
 
 $fieldLabels = ['first_name' => 'First name', 'middle_name' => 'Middle name', 'last_name' => 'Last name', 'phone' => 'Phone',
                 'address' => 'Address', 'city' => 'City', 'postal_code' => 'Postal code'];
@@ -121,14 +122,14 @@ $catReqs = db()->query('SELECT c.*, u.email, u.phone, u.first_name, u.last_name,
                         JOIN users u ON u.id = c.user_id WHERE c.status = "pending" ORDER BY c.id')->fetchAll();
 
 $panelTitle = 'Admin panel';
-$menu = ['Overview' => '#overview', 'Profile requests' => '#requests', 'Provider applications' => '#applications', 'Category requests' => '#category-requests', 'Manage users' => '#users'];
+$menu = ['Overview' => '#overview', 'Profile requests' => '#requests', 'Provider applications' => '#applications', 'Category requests' => '#category-requests', 'Manage users' => '#users', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My orders' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin dashboard | ServiceHub</title>
+  <title>Admin dashboard | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -244,7 +245,8 @@ $menu = ['Overview' => '#overview', 'Profile requests' => '#requests', 'Provider
           <tbody>
           <?php foreach ($users as $u): ?>
             <tr>
-              <td><?= htmlspecialchars($u['first_name'] . ' ' . $u['last_name']) ?></td>
+              <td><?= htmlspecialchars($u['first_name'] . ' ' . $u['last_name']) ?>
+                <?php if ($u['id_doc_file']): ?><br><span class="muted"><?= $u['id_doc_type'] === 'drivers_license' ? "Driver's License" : 'National ID' ?> &middot; <a href="admin-id.php?user=<?= (int)$u['id'] ?>" target="_blank" rel="noopener">View ID</a></span><?php endif; ?></td>
               <td><?= htmlspecialchars($u['email'] ?: $u['phone']) ?></td>
               <td><?= $u['is_verified'] ? 'Yes' : 'No' ?></td>
               <td>

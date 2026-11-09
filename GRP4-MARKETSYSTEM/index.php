@@ -1,8 +1,11 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
-$featured = [];
+$featured = []; $svcProviders = []; $svcCounts = [];
 try {   // the home page still loads even if the database is off
     ensure_shop_tables();
+    $svcProviders = db()->query('SELECT * FROM (' . service_providers_sql() . ') t ORDER BY t.done_jobs DESC, t.id LIMIT 4')->fetchAll();
+    $svcCounts = db()->query("SELECT c.category, COUNT(*) FROM provider_categories c JOIN users u ON u.id = c.user_id
+                              WHERE c.status = 'approved' AND u.role = 'staff' AND u.staff_type = 'service' GROUP BY c.category")->fetchAll(PDO::FETCH_KEY_PAIR);
     $featured = db()->query(product_sql() . ' WHERE p.is_active = 1 AND p.stock > 0 ORDER BY p.id DESC LIMIT 4')->fetchAll();
 } catch (Throwable $e) {}
 ?>
@@ -11,7 +14,7 @@ try {   // the home page still loads even if the database is off
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ServiceHub | Shop with us. Grow with us.</title>
+  <title>AIOS | Shop with us. Grow with us.</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
@@ -22,14 +25,14 @@ try {   // the home page still loads even if the database is off
   <!-- HEADER with Sign in button -->
   <header class="site-header">
     <a class="brand" href="index.php">
-      <span class="brand-mark" aria-hidden="true">S</span>
+      <span class="brand-mark" aria-hidden="true">A</span>
       <?= SITE_NAME ?>
     </a>
 
     <nav class="main-nav" aria-label="Main">
       <a href="index.php">Dashboard</a>
       <a href="shop.php">Shop products</a>
-      <a href="#categories">Book services</a>
+      <a href="providers.php">Book services</a>
       <a href="#providers">Providers</a>
     </nav>
 
@@ -37,7 +40,7 @@ try {   // the home page still loads even if the database is off
       <?php if (is_signed_in()): ?>
         <span class="greeting">Hi, <?= htmlspecialchars($_SESSION['user']) ?></span>
         <a class="btn btn-ghost bell" href="notifications.php" aria-label="Notifications">&#128276;<?php if (($nc = notif_count()) > 0): ?><span class="bell-count"><?= $nc > 9 ? '9+' : $nc ?></span><?php endif; ?></a>
-        <?php if (($_SESSION['role'] ?? '') === 'client'): ?><a class="btn btn-ghost" href="cart.php">Cart (<?= cart_count() ?>)</a><?php endif; ?>
+        <a class="btn btn-ghost" href="cart.php">Cart (<?= cart_count() ?>)</a>
         <a class="btn btn-primary" href="dashboard.php">Dashboard</a>
         <a class="btn btn-ghost" href="signin.php?action=signout">Sign out</a>
       <?php else: ?>
@@ -55,7 +58,7 @@ try {   // the home page still loads even if the database is off
         <p>Buy shoes, shirts and more, or book trusted people for any job. Sell your products or offer your services and start earning.</p>
         <div class="hero-cta">
           <a class="btn btn-primary btn-lg" href="#products">Shop products</a>
-          <a class="btn btn-outline btn-lg" href="#categories">Book a service</a>
+          <a class="btn btn-outline btn-lg" href="providers.php">Book a service</a>
         </div>
       </div>
 
@@ -108,36 +111,27 @@ try {   // the home page still loads even if the database is off
     <section class="section section-tint" id="categories">
       <h2>What service do you need?</h2>
       <div class="category-grid">
-        <?php foreach ($categories as $c): ?>
-          <a class="category" href="#">
-            <span class="category-icon" aria-hidden="true"><?= $c['icon'] ?></span>
-            <strong><?= htmlspecialchars($c['name']) ?></strong>
-            <span class="muted"><?= $c['count'] ?> providers</span>
+        <?php foreach (category_options('service') as $cn => $ic): ?>
+          <a class="category" href="providers.php?cat=<?= urlencode($cn) ?>">
+            <span class="category-icon" aria-hidden="true"><?= $ic ?></span>
+            <strong><?= htmlspecialchars($cn) ?></strong>
+            <span class="muted"><?= (int)($svcCounts[$cn] ?? 0) ?> provider<?= (int)($svcCounts[$cn] ?? 0) === 1 ? '' : 's' ?></span>
           </a>
         <?php endforeach; ?>
       </div>
     </section>
 
-    <!-- PROVIDERS -->
+    <!-- SERVICE PROVIDERS (real accounts that registered as service providers) -->
     <section class="section" id="providers">
-      <h2>Top-rated providers</h2>
-      <div class="provider-grid">
-        <?php foreach ($providers as $p): ?>
-          <article class="provider">
-            <div class="avatar" aria-hidden="true"><?= strtoupper(substr($p['name'], 0, 1)) ?></div>
-            <h3><?= htmlspecialchars($p['name']) ?></h3>
-            <p class="muted"><?= htmlspecialchars($p['role']) ?></p>
-            <p class="provider-meta">
-              <span>★ <?= number_format($p['rating'], 1) ?></span>
-              <span><?= $p['jobs'] ?> jobs done</span>
-            </p>
-            <div class="provider-foot">
-              <span>From <strong><?= money($p['from']) ?></strong></span>
-              <a class="btn btn-small" href="#">Book now</a>
-            </div>
-          </article>
-        <?php endforeach; ?>
-      </div>
+      <h2>Service providers</h2>
+      <?php if (!$svcProviders): ?>
+        <p class="muted">No service providers yet. Clients can apply under <strong>Become a provider</strong>, and an admin approves them.</p>
+      <?php else: ?>
+        <div class="provider-grid">
+          <?php foreach ($svcProviders as $sp) { include __DIR__ . '/includes/provider-card.php'; } ?>
+        </div>
+        <p><a class="btn btn-ghost" href="providers.php">See all providers</a></p>
+      <?php endif; ?>
     </section>
   </main>
 

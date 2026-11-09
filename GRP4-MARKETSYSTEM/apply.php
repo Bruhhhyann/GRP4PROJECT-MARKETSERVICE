@@ -47,7 +47,7 @@ $menu = client_menu();
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Become a provider | ServiceHub</title>
+  <title>Become a provider | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -56,7 +56,7 @@ $menu = client_menu();
     <?php include __DIR__ . '/includes/sidebar.php'; ?>
     <main class="dash-main">
       <h1>Become a provider</h1>
-      <p class="muted">Offer your services or sell your products on ServiceHub. An admin reviews every application.</p>
+      <p class="muted">Offer your services or sell your products on AIOS. An admin reviews every application.</p>
 
       <?php if (isset($_GET['sent'])): ?><p class="form-ok">Application sent. An admin will review it.</p><?php endif; ?>
       <?php if ($last && $last['status'] === 'rejected'): ?><p class="form-error">Your last application was rejected. You can update it and apply again.</p><?php endif; ?>

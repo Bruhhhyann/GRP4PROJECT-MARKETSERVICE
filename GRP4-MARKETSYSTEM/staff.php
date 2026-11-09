@@ -41,6 +41,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && in_array($_POST['action'] ?? '', ['
 }
 $myPhoto = db()->prepare('SELECT photo FROM users WHERE id = ?'); $myPhoto->execute([$uid]); $myPhoto = (string)$myPhoto->fetchColumn();
 
+// Service provider: answer booking requests and edit service details
+if ($type === 'service' && $_SERVER['REQUEST_METHOD'] === 'POST' && csrf_ok()) {
+    $act = $_POST['action'] ?? '';
+    if (in_array($act, ['booking_confirm', 'booking_decline', 'booking_complete'], true)) {
+        $bk = db()->prepare('SELECT * FROM bookings WHERE id = ? AND provider_id = ?');
+        $bk->execute([(int)($_POST['booking_id'] ?? 0), $uid]);
+        $bk = $bk->fetch();
+        $store = store_name($uid); $now = date('Y-m-d H:i:s');
+        if (!$bk) {
+            $msg = 'That booking was not found.';
+        } elseif ($act === 'booking_confirm' && $bk['status'] === 'pending') {
+            $busy = db()->prepare('SELECT id FROM bookings WHERE provider_id = ? AND booking_date = ? AND booking_time = ? AND status = "confirmed" AND id <> ?');
+            $busy->execute([$uid, $bk['booking_date'], $bk['booking_time'], $bk['id']]);
+            if ($busy->fetch()) { $msg = 'You already have a confirmed job at that time. Decline this one or ask the client to rebook.'; }
+            else {
+                db()->prepare('UPDATE bookings SET status = "confirmed", updated_at = ? WHERE id = ?')->execute([$now, $bk['id']]);
+                notify((int)$bk['client_id'], "Your booking #{$bk['id']} with $store is confirmed for " . booking_when($bk) . '.', 'bookings.php');
+                $msg = 'Booking confirmed. The client was told.';
+            }
+        } elseif ($act === 'booking_decline' && $bk['status'] === 'pending') {
+            db()->prepare('UPDATE bookings SET status = "declined", updated_at = ? WHERE id = ?')->execute([$now, $bk['id']]);
+            notify((int)$bk['client_id'], "Sorry, $store could not take booking #{$bk['id']}. You can pick another time or provider.", 'providers.php');
+            $msg = 'Booking declined. The client was told.';
+        } elseif ($act === 'booking_complete' && $bk['status'] === 'confirmed') {
+            db()->prepare('UPDATE bookings SET status = "completed", updated_at = ? WHERE id = ?')->execute([$now, $bk['id']]);
+            notify((int)$bk['client_id'], "Your booking #{$bk['id']} with $store was marked as completed.", 'bookings.php');
+            $msg = 'Marked as completed.';
+        } else {
+            $msg = 'That booking cannot be changed any more.';
+        }
+    } elseif ($act === 'save_service') {
+        $rate  = trim($_POST['service_rate'] ?? '');
+        $about = mb_substr(trim($_POST['service_about'] ?? ''), 0, 600);
+        if ($rate !== '' && (!is_numeric($rate) || (float)$rate < 0 || (float)$rate > 9999999)) { $msg = 'Enter a valid starting price, or leave it empty.'; }
+        else {
+            db()->prepare('UPDATE users SET service_rate = ?, service_about = ? WHERE id = ?')->execute([$rate === '' ? null : (float)$rate, $about, $uid]);
+            $msg = 'Service details saved. Clients can now see them.';
+        }
+    }
+}
+
 $rowsCat = provider_category_rows($uid);
 $myCats  = array_keys(array_filter($rowsCat, fn($x) => $x === 'approved'));
 
@@ -167,10 +208,19 @@ if ($type === 'product') {
     $sales = (float)$sales->fetchColumn();
 }
 
+if ($type === 'service') {
+    $jobsQ = db()->prepare('SELECT b.*, u.first_name, u.last_name, u.email, u.phone FROM bookings b JOIN users u ON u.id = b.client_id
+                            WHERE b.provider_id = ? ORDER BY (b.status = "pending") DESC, (b.status = "confirmed") DESC, b.booking_date DESC, b.booking_time DESC LIMIT 60');
+    $jobsQ->execute([$uid]);
+    $jobs = $jobsQ->fetchAll();
+    $jobCount = fn(array $st) => count(array_filter($jobs, fn($j) => in_array($j['status'], $st, true)));
+    $mySvc = db()->prepare('SELECT service_rate, service_about FROM users WHERE id = ?'); $mySvc->execute([$uid]); $mySvc = $mySvc->fetch();
+}
+
 $panelTitle = $type === 'product' ? 'Product seller' : 'Service provider';
 $menu = $type === 'product'
-    ? ['Overview' => '#overview', 'Orders to approve' => '#orders', 'Add a product' => '#add', 'My products' => '#products', 'My photo' => '#photo', 'My categories' => '#categories']
-    : ['Overview' => '#overview', 'My jobs' => '#jobs', 'My photo' => '#photo', 'My categories' => '#categories'];
+    ? ['Overview' => '#overview', 'Orders to approve' => '#orders', 'Add a product' => '#add', 'My products' => '#products', 'My photo' => '#photo', 'My categories' => '#categories', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My purchases' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php']
+    : ['Overview' => '#overview', 'My jobs' => '#jobs', 'My service details' => '#details', 'My photo' => '#photo', 'My categories' => '#categories', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My purchases' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php'];
 $statusLabel = ['pending' => 'Pending', 'approved' => 'Approved', 'delivered' => 'Delivered', 'rejected' => 'Rejected'];
 $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', 'delivered' => 'badge-delivered', 'rejected' => 'badge-rejected'];
 ?>
@@ -179,7 +229,7 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Staff dashboard | ServiceHub</title>
+  <title>Staff dashboard | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -310,22 +360,48 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
 
       <?php else: ?>
         <div class="cards">
-          <div class="card"><span class="stat-value">3</span><span>Jobs this week</span></div>
-          <div class="card"><span class="stat-value"><?= money(920) ?></span><span>Earnings this month</span></div>
-          <div class="card"><span class="stat-value">4.8</span><span>Average rating</span></div>
+          <div class="card"><span class="stat-value"><?= $jobCount(['pending']) ?></span><span>New requests</span></div>
+          <div class="card"><span class="stat-value"><?= $jobCount(['confirmed']) ?></span><span>Confirmed jobs</span></div>
+          <div class="card"><span class="stat-value"><?= $jobCount(['completed']) ?></span><span>Completed jobs</span></div>
         </div>
 
         <h2 id="jobs">My jobs</h2>
-        <ul class="booking-list card">
-          <?php foreach ($bookings as $b): ?>
-            <li>
-              <div><strong><?= htmlspecialchars($b['service']) ?></strong>
-                <span class="muted"><?= htmlspecialchars($b['date']) ?></span></div>
-              <div class="booking-end"><span class="badge badge-<?= strtolower($b['status']) ?>"><?= $b['status'] ?></span>
-                <span class="price"><?= money($b['price']) ?></span></div>
-            </li>
-          <?php endforeach; ?>
-        </ul>
+        <?php if (!$jobs): ?><p class="muted">No booking requests yet. Clients can book you from the Book a service page.</p><?php endif; ?>
+        <?php foreach ($jobs as $j): [$jl, $jc] = booking_badge($j['status'], true); ?>
+          <div class="card order-card">
+            <div class="order-head">
+              <div><strong>#<?= (int)$j['id'] ?> &middot; <?= htmlspecialchars($j['service']) ?></strong>
+                <span class="muted">for <?= htmlspecialchars(trim($j['first_name'] . ' ' . $j['last_name'])) ?></span></div>
+              <span class="badge <?= $jc ?>"><?= $jl ?></span>
+            </div>
+            <p class="eta-box<?= $j['status'] === 'completed' ? ' done' : '' ?>">&#128197; <?= htmlspecialchars(booking_when($j)) ?></p>
+            <p class="muted">&#128205; <?= htmlspecialchars($j['address']) ?> &middot; Contact: <?= htmlspecialchars($j['contact']) ?><?= $j['notes'] ? '<br>Client note: ' . htmlspecialchars($j['notes']) : '' ?></p>
+            <?php if (in_array($j['status'], ['pending', 'confirmed'], true)): ?>
+              <form method="post" class="row-actions">
+                <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="booking_id" value="<?= (int)$j['id'] ?>">
+                <?php if ($j['status'] === 'pending'): ?>
+                  <button class="btn btn-small" name="action" value="booking_confirm" type="submit">Confirm</button>
+                  <button class="btn btn-small btn-reject" name="action" value="booking_decline" type="submit">Decline</button>
+                <?php else: ?>
+                  <button class="btn btn-small" name="action" value="booking_complete" type="submit">Mark as completed</button>
+                <?php endif; ?>
+              </form>
+            <?php endif; ?>
+          </div>
+        <?php endforeach; ?>
+
+        <h2 id="details">My service details</h2>
+        <form class="card dash-form" method="post">
+          <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="save_service">
+          <div class="form-grid">
+            <div><label for="service_rate">Starting price (optional)</label>
+              <input id="service_rate" name="service_rate" type="number" min="0" step="0.01" value="<?= htmlspecialchars((string)($mySvc['service_rate'] ?? '')) ?>" placeholder="e.g. 35"></div>
+            <div class="full"><label for="service_about">About your service</label>
+              <textarea id="service_about" name="service_about" rows="3" maxlength="600" placeholder="Tell clients what you do, your experience, and the areas you cover."><?= htmlspecialchars((string)($mySvc['service_about'] ?? '')) ?></textarea></div>
+          </div>
+          <p class="muted">Clients see this on the Book a service page, together with your photo and categories.</p>
+          <button class="btn btn-primary" type="submit">Save details</button>
+        </form>
       <?php endif; ?>
 
       <h2 id="photo">My photo</h2>

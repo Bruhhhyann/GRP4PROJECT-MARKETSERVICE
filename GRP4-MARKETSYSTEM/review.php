@@ -1,7 +1,7 @@
 <?php
 // Saves a star rating + comment. Only a client who RECEIVED the product (order marked delivered) can rate it.
 require_once __DIR__ . '/includes/bootstrap.php';
-require_role('client');
+require_role('client', 'staff', 'admin');
 ensure_shop_tables();
 $uid = $_SESSION['user_id'];
 

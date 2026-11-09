@@ -5,7 +5,7 @@
 session_start();
 require_once __DIR__ . '/mail-config.php';
 
-const SITE_NAME = 'ServiceHub';
+const SITE_NAME = 'AIOS';
 const CURRENCY  = '$'; // change to your own currency symbol
 
 function is_signed_in(): bool {
@@ -264,7 +264,7 @@ function product_sql(): string {
 }
 
 function ensure_shop_tables(): void {
-    if (!empty($_SESSION['shop_ready6'])) { return; }
+    if (!empty($_SESSION['shop_ready8'])) { return; }
     ensure_provider_applications_table();
     $sql = [
 "CREATE TABLE IF NOT EXISTS products (
@@ -327,6 +327,8 @@ function ensure_shop_tables(): void {
     add_column_if_missing('orders', 'approved_at', 'DATETIME NULL');
     add_column_if_missing('orders', 'delivered_at', 'DATETIME NULL');
     add_column_if_missing('users', 'photo', "VARCHAR(200) NOT NULL DEFAULT ''");
+    add_column_if_missing('users', 'id_doc_type', "VARCHAR(20) NOT NULL DEFAULT ''");
+    add_column_if_missing('users', 'id_doc_file', "VARCHAR(200) NOT NULL DEFAULT ''");
     // Reviews (live as soon as they are posted) and notifications
     db()->exec("CREATE TABLE IF NOT EXISTS reviews (
       id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, product_id INT UNSIGNED NOT NULL, user_id INT UNSIGNED NOT NULL, order_id INT UNSIGNED NULL,
@@ -337,7 +339,18 @@ function ensure_shop_tables(): void {
       id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, user_id INT UNSIGNED NOT NULL, message VARCHAR(300) NOT NULL,
       link VARCHAR(200) NOT NULL DEFAULT '', is_read TINYINT(1) NOT NULL DEFAULT 0, created_at DATETIME NOT NULL,
       KEY by_user (user_id, is_read), FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)");
-    $_SESSION['shop_ready6'] = true;
+    // Service providers: price and "about" text, and the bookings table
+    add_column_if_missing('users', 'service_rate', 'DECIMAL(10,2) NULL');
+    add_column_if_missing('users', 'service_about', "VARCHAR(600) NOT NULL DEFAULT ''");
+    db()->exec("CREATE TABLE IF NOT EXISTS bookings (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, client_id INT UNSIGNED NOT NULL, provider_id INT UNSIGNED NOT NULL,
+      service VARCHAR(60) NOT NULL, booking_date DATE NOT NULL, booking_time TIME NOT NULL,
+      address VARCHAR(300) NOT NULL, contact VARCHAR(140) NOT NULL, notes VARCHAR(500) NULL,
+      status ENUM('pending','confirmed','declined','completed','cancelled') NOT NULL DEFAULT 'pending',
+      created_at DATETIME NOT NULL, updated_at DATETIME NULL,
+      KEY by_client (client_id), KEY by_provider (provider_id, booking_date),
+      FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (provider_id) REFERENCES users(id) ON DELETE CASCADE)");
+    $_SESSION['shop_ready8'] = true;
 }
 
 function cart_count(): int {
@@ -364,6 +377,7 @@ function place_order(int $buyerId, array $lines): array {
         $st->execute([(int)$l['product_id']]);
         $p = $st->fetch();
         if (!$p) { continue; }
+        if ((int)$p['seller_id'] === $buyerId) { return [0, "You can't buy your own product ({$p['name']})."]; }
         $qty = max(1, min(99, (int)$l['qty']));
         if ($p['stock'] < $qty) { return [0, $p['stock'] > 0 ? "Only {$p['stock']} left of {$p['name']}." : "{$p['name']} is sold out."]; }
         $bySeller[$p['seller_id']][] = [$p, $qty, mb_substr(trim((string)($l['comment'] ?? '')), 0, 300), (string)($l['size'] ?? ''), (string)($l['color'] ?? '')];
@@ -398,7 +412,7 @@ function place_order(int $buyerId, array $lines): array {
 
 function client_menu(): array {
     return ['Dashboard' => 'client.php', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My orders' => 'orders.php',
-            'My profile' => 'profile.php', 'Become a provider' => 'apply.php'];
+            'Book a service' => 'providers.php', 'My bookings' => 'bookings.php', 'My profile' => 'profile.php', 'Become a provider' => 'apply.php'];
 }
 
 // ---------- Provider categories ----------
@@ -598,4 +612,113 @@ function delete_avatar(string $path): void {
         $file = __DIR__ . '/../' . $path;
         if (is_file($file)) { @unlink($file); }
     }
+}
+
+// =====================================================================
+// ID DOCUMENT CHECK (registration) + menu for buyers
+// =====================================================================
+const ID_BLUR_MIN  = 70;    // sharpness needed. Higher = stricter (rejects more photos), lower = more forgiving
+const ID_MIN_LONG  = 640;   // photo must be at least 640 px on its long side
+const ID_MIN_SHORT = 400;   // and 400 px on its short side
+
+// Sharpness score of a photo (variance of the Laplacian). Blurry photos score low. null = could not measure.
+function image_sharpness(string $path): ?float {
+    if (!function_exists('imagecreatefromstring')) { return null; }          // GD extension not enabled
+    $data = @file_get_contents($path);
+    $src  = $data === false ? false : @imagecreatefromstring($data);
+    if (!$src) { return null; }
+    $w = imagesx($src); $h = imagesy($src);
+    $scale = min(1, 800 / max($w, $h));                                      // measure at a fixed size (long side 800 px)
+    $nw = max(3, (int)round($w * $scale)); $nh = max(3, (int)round($h * $scale));
+    $img = imagecreatetruecolor($nw, $nh);
+    imagecopyresampled($img, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
+    imagedestroy($src);
+    $gray = [];
+    for ($y = 0; $y < $nh; $y++) {
+        for ($x = 0; $x < $nw; $x++) {
+            $c = imagecolorat($img, $x, $y);
+            $gray[$y * $nw + $x] = (int)(0.299 * (($c >> 16) & 255) + 0.587 * (($c >> 8) & 255) + 0.114 * ($c & 255));
+        }
+    }
+    imagedestroy($img);
+    $sum = 0; $sum2 = 0; $n = 0;
+    for ($y = 1; $y < $nh - 1; $y++) {
+        for ($x = 1; $x < $nw - 1; $x++) {
+            $i = $y * $nw + $x;
+            $lap = 4 * $gray[$i] - $gray[$i - 1] - $gray[$i + 1] - $gray[$i - $nw] - $gray[$i + $nw];
+            $sum += $lap; $sum2 += $lap * $lap; $n++;
+        }
+    }
+    if ($n === 0) { return null; }
+    $mean = $sum / $n;
+    return $sum2 / $n - $mean * $mean;
+}
+
+// Checks the uploaded ID photo. Returns [extension, error]. error '' = the photo is acceptable.
+function check_id_photo(array $f): array {
+    $err = $f['error'] ?? UPLOAD_ERR_NO_FILE;
+    if ($err === UPLOAD_ERR_NO_FILE) { return ['', "Upload a photo of your National ID or Driver's License."]; }
+    if ($err !== UPLOAD_ERR_OK)      { return ['', 'The photo could not be uploaded. Try a smaller photo (under 5 MB).']; }
+    if ($f['size'] > 5 * 1024 * 1024) { return ['', 'The photo is too big. Maximum is 5 MB.']; }
+    $info  = @getimagesize($f['tmp_name']);
+    $types = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp'];
+    if (!$info || !isset($types[$info[2]])) { return ['', 'The ID photo must be a JPG, PNG or WEBP image.']; }
+    if (max($info[0], $info[1]) < ID_MIN_LONG || min($info[0], $info[1]) < ID_MIN_SHORT) {
+        return ['', 'The photo is too small. Take a closer photo that shows the whole ID clearly.'];
+    }
+    $sharp = image_sharpness($f['tmp_name']);
+    if ($sharp === null) { error_log('ID blur check skipped (enable the GD extension in php.ini).'); }
+    elseif ($sharp < ID_BLUR_MIN) {
+        return ['', 'The photo is blurry. Please upload it again: good light, hold the camera steady, and make sure all the text is readable.'];
+    }
+    return [$types[$info[2]], ''];
+}
+
+// Saves the ID photo in the private folder (not reachable by URL). Returns the file name, or '' on failure.
+function save_id_photo(array $f, string $ext): string {
+    $dir = __DIR__ . '/../private/ids';
+    if (!is_dir($dir) && !mkdir($dir, 0775, true)) { return ''; }
+    $name = 'id-' . bin2hex(random_bytes(12)) . '.' . $ext;
+    return move_uploaded_file($f['tmp_name'], "$dir/$name") ? $name : '';
+}
+function delete_id_photo(string $name): void {
+    if (preg_match('/^id-[a-f0-9]{24}\.(jpg|png|webp)$/', $name)) { @unlink(__DIR__ . '/../private/ids/' . $name); }
+}
+
+// Menu for pages every signed-in account can use (cart, orders)
+function buyer_menu(): array {
+    if (($_SESSION['role'] ?? '') === 'client') { return client_menu(); }
+    return ['Dashboard' => 'dashboard.php', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My orders' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php'];
+}
+
+// =====================================================================
+// SERVICE PROVIDERS + BOOKINGS
+// =====================================================================
+// Every approved service provider (role staff, type service), with store name, about text, categories and jobs done.
+function service_providers_sql(): string {
+    $about = "(SELECT a.description FROM provider_applications a WHERE a.user_id = u.id AND a.status = 'approved' ORDER BY a.id DESC LIMIT 1)";
+    return "SELECT u.id, u.first_name, u.photo, u.service_rate, " . store_expr('u.id', 'u.first_name') . " AS store,
+            COALESCE(NULLIF(u.service_about, ''), $about, '') AS about,
+            (SELECT GROUP_CONCAT(c.category ORDER BY c.category SEPARATOR ',') FROM provider_categories c WHERE c.user_id = u.id AND c.status = 'approved') AS cats,
+            (SELECT COUNT(*) FROM bookings b WHERE b.provider_id = u.id AND b.status = 'completed') AS done_jobs
+            FROM users u WHERE u.role = 'staff' AND u.staff_type = 'service'";
+}
+// The services a provider offers. Older providers without saved categories offer all of them.
+function provider_cats(array $sp): array {
+    $c = array_values(array_filter(explode(',', (string)($sp['cats'] ?? ''))));
+    return $c ?: array_keys(category_options('service'));
+}
+function booking_slots(): array {
+    $out = [];
+    for ($h = 8; $h <= 18; $h++) { $out[sprintf('%02d:00:00', $h)] = date('g:i A', strtotime(sprintf('%02d:00', $h))); }
+    return $out;
+}
+function booking_when(array $b): string {
+    return date('D, M j, Y', strtotime($b['booking_date'])) . ' at ' . date('g:i A', strtotime($b['booking_time']));
+}
+// [label, css class]
+function booking_badge(string $status, bool $forProvider = false): array {
+    $map = ['pending' => [$forProvider ? 'New request' : 'Waiting for the provider', 'badge-pending'], 'confirmed' => ['Confirmed', 'badge-confirmed'],
+            'completed' => ['Completed', 'badge-delivered'], 'declined' => ['Declined', 'badge-rejected'], 'cancelled' => ['Cancelled', 'badge-rejected']];
+    return $map[$status] ?? [$status, 'badge-pending'];
 }

@@ -1,5 +1,5 @@
 -- =====================================================================
--- ServiceHub: complete database
+-- AIOS: complete database (the database itself keeps the name "servicehub")
 -- phpMyAdmin (http://localhost/phpmyadmin) > Import > choose this file > Go
 -- Safe to import again: it only creates what is missing and never deletes data.
 -- =====================================================================
@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS users (
   postal_code   VARCHAR(12)  NULL,
   is_verified   TINYINT(1)   NOT NULL DEFAULT 0,
   photo         VARCHAR(200) NOT NULL DEFAULT '',        -- provider / shop photo (uploads/avatars/...)
+  service_rate  DECIMAL(10,2) NULL,                      -- starting price of a service provider
+  service_about VARCHAR(600) NOT NULL DEFAULT '',        -- about text of a service provider
+  id_doc_type   VARCHAR(20)  NOT NULL DEFAULT '',        -- 'national_id' or 'drivers_license' (set at registration)
+  id_doc_file   VARCHAR(200) NOT NULL DEFAULT '',        -- file name inside /private/ids (only admins can view it)
   created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -158,6 +162,26 @@ CREATE TABLE IF NOT EXISTS notifications (
   created_at DATETIME NOT NULL,
   KEY by_user (user_id, is_read),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- ---------- Service bookings (client books a service provider) ----------
+CREATE TABLE IF NOT EXISTS bookings (
+  id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  client_id    INT UNSIGNED NOT NULL,
+  provider_id  INT UNSIGNED NOT NULL,
+  service      VARCHAR(60) NOT NULL,
+  booking_date DATE NOT NULL,
+  booking_time TIME NOT NULL,
+  address      VARCHAR(300) NOT NULL,
+  contact      VARCHAR(140) NOT NULL,
+  notes        VARCHAR(500) NULL,
+  status       ENUM('pending','confirmed','declined','completed','cancelled') NOT NULL DEFAULT 'pending',
+  created_at   DATETIME NOT NULL,
+  updated_at   DATETIME NULL,
+  KEY by_client (client_id),
+  KEY by_provider (provider_id, booking_date),
+  FOREIGN KEY (client_id)   REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (provider_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
 -- =====================================================================

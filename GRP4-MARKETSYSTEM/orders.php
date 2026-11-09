@@ -1,6 +1,6 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
-require_role('client');
+require_role('client', 'staff', 'admin');
 ensure_shop_tables();
 $uid = $_SESSION['user_id'];
 
@@ -52,14 +52,14 @@ function eta_text(array $o): string {
 }
 
 $panelTitle = 'My account';
-$menu = client_menu();
+$menu = buyer_menu();
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>My orders | ServiceHub</title>
+  <title>My orders | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>

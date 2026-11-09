@@ -12,7 +12,8 @@ if ($p) {
     $o->execute([$id, $p['category']]);
     $others = $o->fetchAll();
 }
-$isClient = ($_SESSION['role'] ?? '') === 'client';
+$isClient = is_signed_in();   // any signed-in account can buy, except its own products
+$isOwn = is_signed_in() && (int)($_SESSION['user_id'] ?? 0) === (int)($p['seller_id'] ?? -1);
 $mine = $p; // keep the main product while the card include reuses $p
 $reviews = []; $eligibleOrder = 0; $myReview = null;
 if ($p) {
@@ -30,8 +31,20 @@ if ($p) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><?= $p ? htmlspecialchars($p['name']) : 'Product' ?> | ServiceHub</title>
+  <title><?= $p ? htmlspecialchars($p['name']) : 'Product' ?> | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
+  <style>
+    /* Star rating: one horizontal row, 1 to 5 stars */
+    .review-form .star-input { display: flex; flex-direction: row-reverse; justify-content: flex-end; align-items: center; gap: .2rem; width: max-content; margin: .4rem 0 .3rem; }
+    .review-form .star-input input { position: absolute !important; opacity: 0 !important; width: 1px !important; height: 1px !important; padding: 0 !important; margin: 0 !important; border: 0 !important; }
+    .review-form .star-input label { display: inline-block !important; margin: 0 !important; padding: 0 .05rem !important; font-size: 2.8rem; line-height: 1; font-weight: 400 !important; color: #d3dbe3; cursor: pointer; transition: color .1s ease, transform .1s ease; }
+    .review-form .star-input label:hover { transform: scale(1.12); }
+    .review-form .star-input input:checked ~ label,
+    .review-form .star-input label:hover,
+    .review-form .star-input label:hover ~ label { color: #f5b83d; }
+    .review-form .star-input input:focus-visible + label { outline: 3px solid #f5b83d; outline-offset: 2px; border-radius: 6px; }
+    .review-form .star-text { display: block; margin: 0 0 1rem; font-size: .92rem; }
+  </style>
 </head>
 <body>
   <?php include __DIR__ . '/includes/topbar.php'; ?>
@@ -59,8 +72,8 @@ if ($p) {
 
           <?php if ($p['stock'] > 0 && !is_signed_in()): ?>
             <p><a class="btn btn-primary btn-lg" href="signin.php">Sign in to buy</a></p>
-          <?php elseif ($p['stock'] > 0 && !$isClient): ?>
-            <p class="muted">Only client accounts can buy products.</p>
+          <?php elseif ($p['stock'] > 0 && $isOwn): ?>
+            <p class="muted">This is your own product, so you can't buy it.</p>
           <?php elseif ($p['stock'] > 0): ?>
             <form class="buy-box" id="buy" method="post" action="cart.php">
               <input type="hidden" name="csrf" value="<?= csrf() ?>">
@@ -150,12 +163,13 @@ if ($p) {
               <label for="star<?= $i ?>" title="<?= $i ?> star<?= $i === 1 ? '' : 's' ?>">&#9733;</label>
             <?php endfor; ?>
           </div>
+          <span class="star-text muted" id="star-text"><?= $myReview ? 'Your rating: ' . (int)$myReview['rating'] . ' out of 5' : 'Tap a star to rate (1 to 5)' ?></span>
           <label for="rcomment">Your review (optional)</label>
           <textarea id="rcomment" name="comment" rows="3" maxlength="600" placeholder="How was the quality, fit and delivery?"><?= htmlspecialchars((string)($myReview['comment'] ?? '')) ?></textarea>
           <button class="btn btn-primary" type="submit"><?= $myReview ? 'Update review' : 'Post review' ?></button>
           <p class="muted">Your review is shown to other buyers right away.</p>
         </form>
-      <?php elseif ($isClient): ?>
+      <?php elseif ($isClient && !$isOwn): ?>
         <p class="review-note">&#128274; Only buyers who received this product can rate it. Buy it, then tap <strong>Order received</strong> when it arrives.</p>
       <?php endif; ?>
 
@@ -195,6 +209,10 @@ if ($p) {
       };
       form.querySelectorAll('input[type=radio]').forEach(r => r.addEventListener('change', show));
     }
+    const starText = document.getElementById('star-text');
+    document.querySelectorAll('.star-input input').forEach(r => r.addEventListener('change', () => {
+      if (starText) starText.textContent = 'Your rating: ' + r.value + ' out of 5';
+    }));
   </script>
 </body>
 </html>
