@@ -81,6 +81,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'revie
             ->execute([$ok ? 'approved' : 'rejected', date('Y-m-d H:i:s'), $cid]);
         $msg = $ok ? 'Approved. The provider can now use "' . $c['category'] . '".' : 'Request rejected.';
     }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'id_review') {
+    // Approve or reject a client's ID
+    $cu = db()->prepare('SELECT * FROM users WHERE id = ? AND role = "client" AND id_status = "pending"');
+    $cu->execute([(int)($_POST['user_id'] ?? 0)]);
+    $cu = $cu->fetch();
+    $note = mb_substr(trim($_POST['note'] ?? ''), 0, 200);
+    if (!hash_equals($_SESSION['csrf'], $_POST['csrf'] ?? '')) {
+        $msg = 'Session expired. Refresh the page and try again.';
+    } elseif (!$cu) {
+        $msg = 'That ID was not found or was already reviewed.';
+    } elseif (($_POST['decision'] ?? '') === 'approve') {
+        db()->prepare('UPDATE users SET id_status = "approved", id_reviewed_at = ?, id_note = "" WHERE id = ?')->execute([date('Y-m-d H:i:s'), $cu['id']]);
+        notify((int)$cu['id'], 'Your ID was approved. You can now order, book services and apply as a provider.', 'client.php');
+        if (give_coupon((int)$cu['id'], ['type' => 'shipping', 'value' => 0, 'min_spend' => 0, 'max_discount' => null, 'label' => 'Welcome gift: free shipping', 'days' => 30], 'welcome', null, 'welcome')) {
+            notify((int)$cu['id'], '🎁 Welcome gift: a free shipping voucher is in your wallet.', 'vouchers.php');
+        }
+        $msg = 'ID approved. The client can now order and book.';
+    } else {
+        db()->prepare('UPDATE users SET id_status = "rejected", id_reviewed_at = ?, id_note = ? WHERE id = ?')->execute([date('Y-m-d H:i:s'), $note, $cu['id']]);
+        notify((int)$cu['id'], 'Your ID was rejected' . ($note ? ': ' . $note : '.') . ' Please upload a clear photo of a valid National ID or Driver\'s License.', 'id-upload.php');
+        $msg = 'ID rejected. The client was asked to upload a valid ID.';
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'code_create') {
+    // Create a voucher code that clients can claim
+    $code  = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $_POST['code'] ?? ''));
+    $type  = $_POST['type'] ?? '';
+    $value = (float)($_POST['value'] ?? 0);
+    $min   = max(0, (float)($_POST['min_spend'] ?? 0));
+    $max   = ($_POST['max_discount'] ?? '') === '' ? null : max(0, (float)$_POST['max_discount']);
+    $days  = max(1, min(365, (int)($_POST['valid_days'] ?? 30)));
+    $claims = ($_POST['max_claims'] ?? '') === '' ? null : max(1, (int)$_POST['max_claims']);
+    $label = mb_substr(trim($_POST['label'] ?? ''), 0, 140);
+    if (!hash_equals($_SESSION['csrf'], $_POST['csrf'] ?? ''))      { $msg = 'Session expired. Refresh the page and try again.'; }
+    elseif (strlen($code) < 4 || strlen($code) > 20)                { $msg = 'The code must be 4 to 20 letters or numbers.'; }
+    elseif (!in_array($type, ['percent', 'fixed', 'shipping'], true)) { $msg = 'Choose a voucher type.'; }
+    elseif ($type !== 'shipping' && ($value <= 0 || ($type === 'percent' && $value > 100))) { $msg = 'Enter a valid discount value (percent must be 1 to 100).'; }
+    elseif ($label === '')                                          { $msg = 'Enter a short name for the voucher, like "Summer sale 10% off".'; }
+    else {
+        try {
+            db()->prepare('INSERT INTO coupon_codes (code, type, value, min_spend, max_discount, label, valid_days, max_claims, created_at) VALUES (?,?,?,?,?,?,?,?,?)')
+                ->execute([$code, $type, $type === 'shipping' ? 0 : $value, $min, $type === 'percent' ? $max : null, $label, $days, $claims, date('Y-m-d H:i:s')]);
+            $msg = "Voucher code $code created. Clients claim it under My vouchers.";
+        } catch (PDOException $e) { $msg = 'That code already exists. Choose another.'; }
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'code_toggle') {
+    if (hash_equals($_SESSION['csrf'], $_POST['csrf'] ?? '')) {
+        db()->prepare('UPDATE coupon_codes SET active = 1 - active WHERE id = ?')->execute([(int)($_POST['code_id'] ?? 0)]);
+        $msg = 'Voucher code updated.';
+    }
 // Change a user's role
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $id = (int)($_POST['user_id'] ?? 0);
@@ -106,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'revie
 $counts = ['admin' => 0, 'client' => 0, 'staff' => 0];
 foreach (db()->query('SELECT role, COUNT(*) n FROM users GROUP BY role') as $r) { $counts[$r['role']] = (int)$r['n']; }
 $unverified = (int)db()->query('SELECT COUNT(*) FROM users WHERE is_verified = 0')->fetchColumn();
-$users = db()->query('SELECT id, first_name, last_name, email, phone, role, staff_type, is_verified, id_doc_type, id_doc_file, created_at FROM users ORDER BY id DESC LIMIT 50')->fetchAll();
+$users = db()->query('SELECT id, first_name, last_name, email, phone, role, staff_type, is_verified, id_doc_type, id_doc_file, id_status, created_at FROM users ORDER BY id DESC LIMIT 50')->fetchAll();
 
 $fieldLabels = ['first_name' => 'First name', 'middle_name' => 'Middle name', 'last_name' => 'Last name', 'phone' => 'Phone',
                 'address' => 'Address', 'city' => 'City', 'postal_code' => 'Postal code'];
@@ -121,8 +170,13 @@ $apps = db()->query('SELECT a.*, u.email, u.phone, u.first_name, u.last_name FRO
 $catReqs = db()->query('SELECT c.*, u.email, u.phone, u.first_name, u.last_name, u.staff_type FROM provider_categories c
                         JOIN users u ON u.id = c.user_id WHERE c.status = "pending" ORDER BY c.id')->fetchAll();
 
+$idPending = db()->query('SELECT id, first_name, last_name, email, phone, id_doc_type, created_at FROM users
+                         WHERE role = "client" AND id_status = "pending" AND id_doc_file <> "" ORDER BY id')->fetchAll();
+
+$codes = db()->query('SELECT * FROM coupon_codes ORDER BY id DESC LIMIT 50')->fetchAll();
+
 $panelTitle = 'Admin panel';
-$menu = ['Overview' => '#overview', 'Profile requests' => '#requests', 'Provider applications' => '#applications', 'Category requests' => '#category-requests', 'Manage users' => '#users', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My orders' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php'];
+$menu = ['Overview' => '#overview', 'ID verification' => '#id-review', 'Vouchers' => '#vouchers', 'Profile requests' => '#requests', 'Provider applications' => '#applications', 'Category requests' => '#category-requests', 'Manage users' => '#users', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My orders' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -145,6 +199,74 @@ $menu = ['Overview' => '#overview', 'Profile requests' => '#requests', 'Provider
         <div class="card"><span class="stat-value"><?= $counts['staff'] ?></span><span>Staff</span></div>
         <div class="card"><span class="stat-value"><?= $unverified ?></span><span>Not verified yet</span></div>
       </div>
+
+      <h2 id="id-review">ID verification (<?= count($idPending) ?>)</h2>
+      <?php if (!$idPending): ?>
+        <p class="muted">No IDs waiting for review.</p>
+      <?php else: ?>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>Client</th><th>Document</th><th>Decision</th></tr></thead>
+          <tbody>
+          <?php foreach ($idPending as $q): ?>
+            <tr>
+              <td><strong><?= htmlspecialchars($q['first_name'] . ' ' . $q['last_name']) ?></strong><br><span class="muted"><?= htmlspecialchars($q['email'] ?: $q['phone']) ?></span></td>
+              <td><span class="muted"><?= $q['id_doc_type'] === 'drivers_license' ? "Driver's License" : 'National ID' ?></span><br>
+                <a href="admin-id.php?user=<?= (int)$q['id'] ?>" target="_blank" rel="noopener"><img class="id-thumb" src="admin-id.php?user=<?= (int)$q['id'] ?>" alt="ID of <?= htmlspecialchars($q['first_name']) ?>"></a></td>
+              <td>
+                <form method="post" class="id-decide">
+                  <input type="hidden" name="action" value="id_review"><input type="hidden" name="csrf" value="<?= $_SESSION['csrf'] ?>"><input type="hidden" name="user_id" value="<?= (int)$q['id'] ?>">
+                  <input type="text" name="note" maxlength="200" placeholder="Reason if rejecting (optional)" aria-label="Reason">
+                  <div class="row-actions">
+                    <button class="btn btn-small" name="decision" value="approve" type="submit">Approve</button>
+                    <button class="btn btn-small btn-reject" name="decision" value="reject" type="submit">Reject</button>
+                  </div>
+                </form>
+              </td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted">Open the photo to check it is a real National ID or Driver's License, that it is readable, and that the name matches the account.</p>
+      <?php endif; ?>
+
+      <h2 id="vouchers">Voucher codes</h2>
+      <p class="muted">Clients earn vouchers automatically by buying a lot or spending a lot. Here you create codes anyone can claim under My vouchers (for sales and promos).</p>
+      <form class="card dash-form" method="post">
+        <input type="hidden" name="action" value="code_create"><input type="hidden" name="csrf" value="<?= $_SESSION['csrf'] ?>">
+        <div class="form-grid">
+          <div><label for="vc_code">Code</label><input id="vc_code" name="code" maxlength="20" placeholder="e.g. SAVE10" required></div>
+          <div class="full"><label for="vc_label">Name shown to clients</label><input id="vc_label" name="label" maxlength="140" placeholder="e.g. Summer sale: 10% off" required></div>
+          <div><label for="vc_type">Type</label>
+            <select id="vc_type" name="type"><option value="percent">Percent off</option><option value="fixed">Fixed amount off</option><option value="shipping">Free shipping</option></select></div>
+          <div><label for="vc_value">Value (% or amount, not needed for free shipping)</label><input id="vc_value" name="value" type="number" step="0.01" min="0" value="10"></div>
+          <div><label for="vc_min">Minimum spend</label><input id="vc_min" name="min_spend" type="number" step="0.01" min="0" value="0"></div>
+          <div><label for="vc_max">Maximum discount (percent only, optional)</label><input id="vc_max" name="max_discount" type="number" step="0.01" min="0"></div>
+          <div><label for="vc_days">Valid for (days after claiming)</label><input id="vc_days" name="valid_days" type="number" min="1" max="365" value="30"></div>
+          <div><label for="vc_claims">Max claims (optional)</label><input id="vc_claims" name="max_claims" type="number" min="1"></div>
+        </div>
+        <button class="btn btn-primary" type="submit">Create voucher code</button>
+      </form>
+      <?php if ($codes): ?>
+      <div class="table-wrap">
+        <table class="tbl">
+          <thead><tr><th>Code</th><th>Voucher</th><th>Claimed</th><th>Status</th><th></th></tr></thead>
+          <tbody>
+          <?php foreach ($codes as $vc): ?>
+            <tr>
+              <td><strong><?= htmlspecialchars($vc['code']) ?></strong></td>
+              <td><?= htmlspecialchars($vc['label']) ?><br><span class="muted"><?= $vc['type'] === 'shipping' ? 'Free shipping' : ($vc['type'] === 'percent' ? (float)$vc['value'] . '% off' : money((float)$vc['value']) . ' off') ?> &middot; min <?= money((float)$vc['min_spend']) ?> &middot; <?= (int)$vc['valid_days'] ?> days</span></td>
+              <td><?= (int)$vc['claims'] ?><?= $vc['max_claims'] !== null ? ' / ' . (int)$vc['max_claims'] : '' ?></td>
+              <td><?= $vc['active'] ? '<span class="badge badge-confirmed">Active</span>' : '<span class="badge badge-rejected">Off</span>' ?></td>
+              <td><form method="post"><input type="hidden" name="action" value="code_toggle"><input type="hidden" name="csrf" value="<?= $_SESSION['csrf'] ?>"><input type="hidden" name="code_id" value="<?= (int)$vc['id'] ?>">
+                <button class="btn btn-small btn-light" type="submit"><?= $vc['active'] ? 'Turn off' : 'Turn on' ?></button></form></td>
+            </tr>
+          <?php endforeach; ?>
+          </tbody>
+        </table>
+      </div>
+      <?php endif; ?>
 
       <h2 id="requests">Profile change requests (<?= count($requests) ?>)</h2>
       <?php if (!$requests): ?>
@@ -246,7 +368,7 @@ $menu = ['Overview' => '#overview', 'Profile requests' => '#requests', 'Provider
           <?php foreach ($users as $u): ?>
             <tr>
               <td><?= htmlspecialchars($u['first_name'] . ' ' . $u['last_name']) ?>
-                <?php if ($u['id_doc_file']): ?><br><span class="muted"><?= $u['id_doc_type'] === 'drivers_license' ? "Driver's License" : 'National ID' ?> &middot; <a href="admin-id.php?user=<?= (int)$u['id'] ?>" target="_blank" rel="noopener">View ID</a></span><?php endif; ?></td>
+                <?php if ($u['id_doc_file']): ?><br><span class="muted"><?= $u['id_doc_type'] === 'drivers_license' ? "Driver's License" : 'National ID' ?> &middot; <a href="admin-id.php?user=<?= (int)$u['id'] ?>" target="_blank" rel="noopener">View ID</a> &middot; <?= htmlspecialchars($u['id_status'] ?? '') ?></span><?php endif; ?></td>
               <td><?= htmlspecialchars($u['email'] ?: $u['phone']) ?></td>
               <td><?= $u['is_verified'] ? 'Yes' : 'No' ?></td>
               <td>

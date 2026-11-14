@@ -4,6 +4,12 @@
 
 session_start();
 require_once __DIR__ . '/mail-config.php';
+if (is_file(__DIR__ . '/id-config.php')) { require_once __DIR__ . '/id-config.php'; }
+if (!defined('TESSERACT_PATH')) { define('TESSERACT_PATH', ''); }
+if (is_file(__DIR__ . '/shop-config.php')) { require_once __DIR__ . '/shop-config.php'; }
+if (!defined('SHIPPING_FEE'))      { define('SHIPPING_FEE', 3.00); }
+if (!defined('FREE_SHIPPING_MIN')) { define('FREE_SHIPPING_MIN', 50.00); }
+if (!defined('REWARD_VALID_DAYS')) { define('REWARD_VALID_DAYS', 60); }
 
 const SITE_NAME = 'AIOS';
 const CURRENCY  = '$'; // change to your own currency symbol
@@ -264,7 +270,7 @@ function product_sql(): string {
 }
 
 function ensure_shop_tables(): void {
-    if (!empty($_SESSION['shop_ready8'])) { return; }
+    if (!empty($_SESSION['shop_ready11'])) { return; }
     ensure_provider_applications_table();
     $sql = [
 "CREATE TABLE IF NOT EXISTS products (
@@ -350,7 +356,35 @@ function ensure_shop_tables(): void {
       created_at DATETIME NOT NULL, updated_at DATETIME NULL,
       KEY by_client (client_id), KEY by_provider (provider_id, booking_date),
       FOREIGN KEY (client_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (provider_id) REFERENCES users(id) ON DELETE CASCADE)");
-    $_SESSION['shop_ready8'] = true;
+    // ID review: new clients start as "pending" until an admin approves the ID (older accounts count as approved)
+    add_column_if_missing('users', 'id_status', "ENUM('pending','approved','rejected') NOT NULL DEFAULT 'approved'");
+    add_column_if_missing('users', 'id_reviewed_at', 'DATETIME NULL');
+    add_column_if_missing('users', 'id_note', "VARCHAR(200) NOT NULL DEFAULT ''");
+    // Followers: who follows which shop, provider or client
+    db()->exec("CREATE TABLE IF NOT EXISTS follows (
+      follower_id INT UNSIGNED NOT NULL, followed_id INT UNSIGNED NOT NULL, created_at DATETIME NOT NULL,
+      PRIMARY KEY (follower_id, followed_id), KEY by_followed (followed_id),
+      FOREIGN KEY (follower_id) REFERENCES users(id) ON DELETE CASCADE, FOREIGN KEY (followed_id) REFERENCES users(id) ON DELETE CASCADE)");
+    // Shipping fee, voucher discount on each order, and the voucher tables
+    add_column_if_missing('orders', 'shipping_fee', 'DECIMAL(10,2) NOT NULL DEFAULT 0');
+    add_column_if_missing('orders', 'discount', 'DECIMAL(10,2) NOT NULL DEFAULT 0');
+    add_column_if_missing('orders', 'voucher_note', "VARCHAR(200) NOT NULL DEFAULT ''");
+    db()->exec("CREATE TABLE IF NOT EXISTS coupons (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, user_id INT UNSIGNED NOT NULL,
+      type ENUM('percent','fixed','shipping') NOT NULL, value DECIMAL(10,2) NOT NULL DEFAULT 0,
+      min_spend DECIMAL(10,2) NOT NULL DEFAULT 0, max_discount DECIMAL(10,2) NULL,
+      label VARCHAR(140) NOT NULL, source VARCHAR(20) NOT NULL DEFAULT 'reward',
+      reward_key VARCHAR(40) NULL, code_id INT UNSIGNED NULL, expires_at DATETIME NULL,
+      used_order_id INT UNSIGNED NULL, created_at DATETIME NOT NULL,
+      UNIQUE KEY one_reward (user_id, reward_key), UNIQUE KEY one_code (user_id, code_id), KEY by_user (user_id, used_order_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE)");
+    db()->exec("CREATE TABLE IF NOT EXISTS coupon_codes (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY, code VARCHAR(30) NOT NULL UNIQUE,
+      type ENUM('percent','fixed','shipping') NOT NULL, value DECIMAL(10,2) NOT NULL DEFAULT 0,
+      min_spend DECIMAL(10,2) NOT NULL DEFAULT 0, max_discount DECIMAL(10,2) NULL, label VARCHAR(140) NOT NULL,
+      valid_days INT UNSIGNED NOT NULL DEFAULT 30, max_claims INT UNSIGNED NULL, claims INT UNSIGNED NOT NULL DEFAULT 0,
+      active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL)");
+    $_SESSION['shop_ready11'] = true;
 }
 
 function cart_count(): int {
@@ -365,7 +399,7 @@ function cart_count(): int {
 
 // $lines = [['product_id' => 1, 'qty' => 2, 'comment' => '...'], ...]
 // Makes one PENDING order per seller. Returns [number_of_orders, error_message].
-function place_order(int $buyerId, array $lines): array {
+function place_order(int $buyerId, array $lines, array $pick = []): array {
     $b = db()->prepare('SELECT * FROM users WHERE id = ?');
     $b->execute([$buyerId]);
     $buyer = $b->fetch();
@@ -388,23 +422,53 @@ function place_order(int $buyerId, array $lines): array {
     $address = trim($buyer['address'] . ', ' . $buyer['city'] . ' ' . ($buyer['postal_code'] ?? ''));
     $contact = $buyer['email'] ?: ($buyer['phone'] ?? '');
 
+    // Shipping fee and vouchers for each shop's order (worked out before anything is saved)
+    $plans = []; $claimed = [];
+    foreach ($bySeller as $sellerId => $items) {
+        $sub = 0.0;
+        foreach ($items as $it) { $sub += (float)$it[0]['price'] * $it[1]; }
+        $ship = shipping_fee_for($sub); $disc = 0.0; $use = []; $notes = [];
+        foreach (['shipping', 'discount'] as $kind) {
+            $cid = (int)($pick[$kind] ?? 0);
+            if (!$cid || isset($claimed[$cid])) { continue; }
+            $cs = db()->prepare('SELECT * FROM coupons WHERE id = ? AND user_id = ?');
+            $cs->execute([$cid, $buyerId]);
+            $c = $cs->fetch();
+            $rightKind = $c && (($kind === 'shipping') === ($c['type'] === 'shipping'));
+            if (!$c || !$rightKind || !coupon_usable($c, $sub)) {
+                if (count($bySeller) === 1) { return [0, 'That voucher cannot be used for this order. You may need to spend more, or it expired.']; }
+                continue;
+            }
+            if ($kind === 'shipping') { if ($ship <= 0) { continue; } $ship = 0.0; }
+            else { $disc = coupon_discount($c, $sub); if ($disc <= 0) { continue; } }
+            $use[] = (int)$c['id']; $notes[] = $c['label']; $claimed[$cid] = true;
+        }
+        $plans[$sellerId] = [$ship, $disc, $use, implode('; ', $notes)];
+    }
+
     $newIds = [];
     db()->beginTransaction();
     try {
         foreach ($bySeller as $sellerId => $items) {
-            db()->prepare('INSERT INTO orders (buyer_id, seller_id, status, payment_method, ship_name, ship_address, ship_contact, created_at) VALUES (?,?,"pending","COD",?,?,?,?)')
-                ->execute([$buyerId, $sellerId, $name, $address, $contact, date('Y-m-d H:i:s')]);
+            [$ship, $disc, $use, $note] = $plans[$sellerId];
+            db()->prepare('INSERT INTO orders (buyer_id, seller_id, status, payment_method, ship_name, ship_address, ship_contact, shipping_fee, discount, voucher_note, created_at) VALUES (?,?,"pending","COD",?,?,?,?,?,?,?)')
+                ->execute([$buyerId, $sellerId, $name, $address, $contact, $ship, $disc, $note, date('Y-m-d H:i:s')]);
             $oid = (int)db()->lastInsertId();
             $newIds[$sellerId] = $oid;
             foreach ($items as [$p, $qty, $comment, $size, $color]) {
                 db()->prepare('INSERT INTO order_items (order_id, product_id, name, price, quantity, comment, size, color) VALUES (?,?,?,?,?,?,?,?)')
                     ->execute([$oid, $p['id'], $p['name'], $p['price'], $qty, $comment ?: null, $size, $color]);
             }
+            foreach ($use as $cid) {
+                $u = db()->prepare('UPDATE coupons SET used_order_id = ? WHERE id = ? AND used_order_id IS NULL');
+                $u->execute([$oid, $cid]);
+                if ($u->rowCount() !== 1) { throw new RuntimeException('voucher used'); }
+            }
         }
         db()->commit();
-    } catch (PDOException $e) {
-        db()->rollBack();
-        return [0, 'Could not place the order. Please try again.'];
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) { db()->rollBack(); }
+        return [0, $e->getMessage() === 'voucher used' ? 'That voucher was already used.' : 'Could not place the order. Please try again.'];
     }
     foreach ($newIds as $sid => $oid) { notify((int)$sid, "New order #$oid from $name. Open Orders to approve it.", 'staff.php#orders'); }
     return [count($bySeller), ''];
@@ -412,7 +476,7 @@ function place_order(int $buyerId, array $lines): array {
 
 function client_menu(): array {
     return ['Dashboard' => 'client.php', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My orders' => 'orders.php',
-            'Book a service' => 'providers.php', 'My bookings' => 'bookings.php', 'My profile' => 'profile.php', 'Become a provider' => 'apply.php'];
+            'Book a service' => 'providers.php', 'My bookings' => 'bookings.php', 'My vouchers' => 'vouchers.php', 'People' => 'people.php', 'My ID' => 'id-upload.php', 'My profile' => 'profile.php', 'Become a provider' => 'apply.php'];
 }
 
 // ---------- Provider categories ----------
@@ -688,7 +752,7 @@ function delete_id_photo(string $name): void {
 // Menu for pages every signed-in account can use (cart, orders)
 function buyer_menu(): array {
     if (($_SESSION['role'] ?? '') === 'client') { return client_menu(); }
-    return ['Dashboard' => 'dashboard.php', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My orders' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php'];
+    return ['Dashboard' => 'dashboard.php', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My orders' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php', 'My vouchers' => 'vouchers.php', 'People' => 'people.php'];
 }
 
 // =====================================================================
@@ -721,4 +785,273 @@ function booking_badge(string $status, bool $forProvider = false): array {
     $map = ['pending' => [$forProvider ? 'New request' : 'Waiting for the provider', 'badge-pending'], 'confirmed' => ['Confirmed', 'badge-confirmed'],
             'completed' => ['Completed', 'badge-delivered'], 'declined' => ['Declined', 'badge-rejected'], 'cancelled' => ['Cancelled', 'badge-rejected']];
     return $map[$status] ?? [$status, 'badge-pending'];
+}
+
+// =====================================================================
+// ID REVIEW: automatic text check (optional OCR) + admin approval gate
+// =====================================================================
+// Reads the text on a photo with Tesseract, if it is installed. null = OCR is not available.
+function ocr_id_text(string $image): ?string {
+    $disabled = array_map('trim', explode(',', (string)ini_get('disable_functions')));
+    if (!function_exists('shell_exec') || in_array('shell_exec', $disabled, true)) { return null; }
+    $bin = TESSERACT_PATH !== '' ? TESSERACT_PATH : 'tesseract';
+    $cmd = escapeshellarg($bin) . ' ' . escapeshellarg($image) . ' stdout --psm 11 2>&1';
+    if (stripos(PHP_OS, 'WIN') === 0) { $cmd = '"' . $cmd . '"'; }
+    $out = @shell_exec($cmd);
+    if ($out === null || $out === false) { return null; }
+    if (strlen($out) < 400 && preg_match('/not recognized|not found|cannot find|No such file/i', $out)) { return null; }
+    return $out;
+}
+
+// Returns an error message, or '' when the photo is fine (or OCR is not installed, so the admin decides).
+function check_id_text(string $path, string $first, string $last): string {
+    $text = ocr_id_text($path);
+    if ($text === null) { return ''; }
+    $words = array_values(array_filter(preg_split('/\s+/', strtoupper(preg_replace('/[^A-Za-z0-9]+/', ' ', $text))), fn($w) => strlen($w) >= 2));
+    if (count($words) < 8) { return "We could not read enough text on this photo. Upload a clear photo of your own National ID or Driver's License."; }
+    $has = function (string $name) use ($words): bool {
+        foreach (preg_split('/[\s\-]+/', strtoupper($name)) as $tok) {
+            $tok = preg_replace('/[^A-Z0-9]/', '', $tok);
+            if (strlen($tok) < 2) { continue; }
+            foreach ($words as $w) {
+                if (strlen($tok) === 2) { if ($w === $tok) { return true; } continue; }
+                similar_text($w, $tok, $pct);
+                if ($pct >= 80) { return true; }
+            }
+        }
+        return false;
+    };
+    if (!$has($last) || !$has($first)) {
+        return 'We could not find your name on this document. Use your own ID, make sure the name matches what you typed above, and that the text is clear.';
+    }
+    return '';
+}
+
+// Clients can order, book and apply only after an admin approved their ID. Staff and admin accounts are not blocked.
+function id_approved(): bool {
+    if (empty($_SESSION['user_id'])) { return false; }
+    if (($_SESSION['role'] ?? '') !== 'client') { return true; }
+    static $cache = [];
+    $uid = (int)$_SESSION['user_id'];
+    if (!isset($cache[$uid])) {
+        ensure_shop_tables();
+        $st = db()->prepare('SELECT id_status FROM users WHERE id = ?');
+        $st->execute([$uid]);
+        $cache[$uid] = (string)$st->fetchColumn();
+    }
+    return $cache[$uid] === 'approved';
+}
+const ID_BLOCK_MESSAGE = 'Your ID must be approved by an admin first. You can browse now, and order or book once it is approved.';
+
+// The strip shown under the header while the ID is waiting or was rejected
+function id_banner(): string {
+    if (($_SESSION['role'] ?? '') !== 'client' || empty($_SESSION['user_id'])) { return ''; }
+    try {
+        ensure_shop_tables();
+        $st = db()->prepare('SELECT id_status, id_note FROM users WHERE id = ?');
+        $st->execute([$_SESSION['user_id']]);
+        $r = $st->fetch();
+        if ($r && $r['id_status'] === 'pending') {
+            return '<div class="id-banner">&#128260; Your ID is waiting for an admin to review it. You can browse now, and order, book or apply once it is approved.</div>';
+        }
+        if ($r && $r['id_status'] === 'rejected') {
+            return '<div class="id-banner bad">Your ID was rejected' . ($r['id_note'] ? ': ' . htmlspecialchars($r['id_note']) : '.')
+                 . ' <a href="id-upload.php">Upload a valid ID</a> to continue.</div>';
+        }
+    } catch (Throwable $e) {}
+    return '';
+}
+
+function notify_admins(string $message, string $link = ''): void {
+    try {
+        foreach (db()->query("SELECT id FROM users WHERE role = 'admin'")->fetchAll(PDO::FETCH_COLUMN) as $aid) { notify((int)$aid, $message, $link); }
+    } catch (Throwable $e) {}
+}
+
+// =====================================================================
+// DELETE ACCOUNT (clients and staff delete their own account; admins cannot)
+// =====================================================================
+// Things that must be finished first. An empty list means the account can be deleted.
+function account_blockers(int $uid): array {
+    $count = function (string $sql) use ($uid): int { $q = db()->prepare($sql); $q->execute([$uid]); return (int)$q->fetchColumn(); };
+    $pl = fn(int $n, string $word) => $n . ' ' . $word . ($n === 1 ? '' : 's');
+    $out = [];
+    if ($n = $count('SELECT COUNT(*) FROM orders WHERE buyer_id = ? AND status = "approved"'))     { $out[] = 'You have ' . $pl($n, 'order') . ' on the way. Tap "Order received" on My orders first.'; }
+    if ($n = $count('SELECT COUNT(*) FROM orders WHERE seller_id = ? AND status = "approved"'))    { $out[] = 'You have ' . $pl($n, 'approved order') . ' that ' . ($n === 1 ? 'is' : 'are') . ' not delivered yet. Finish delivering ' . ($n === 1 ? 'it' : 'them') . ' first.'; }
+    if ($n = $count('SELECT COUNT(*) FROM bookings WHERE client_id = ? AND status = "confirmed"'))   { $out[] = 'You have ' . $pl($n, 'confirmed booking') . '. Cancel ' . ($n === 1 ? 'it' : 'them') . ' under My bookings first.'; }
+    if ($n = $count('SELECT COUNT(*) FROM bookings WHERE provider_id = ? AND status = "confirmed"')) { $out[] = 'You have ' . $pl($n, 'confirmed job') . '. Mark ' . ($n === 1 ? 'it' : 'them') . ' as completed first.'; }
+    return $out;
+}
+
+// Deletes the account and everything that belongs to it (cascades in the database), then removes its files.
+// Waiting orders and bookings are cancelled and the other person is told.
+function delete_account(int $uid): void {
+    $st = db()->prepare('SELECT * FROM users WHERE id = ?');
+    $st->execute([$uid]);
+    $u = $st->fetch();
+    if (!$u || $u['role'] === 'admin') { throw new RuntimeException('This account cannot be deleted here.'); }
+    $name = trim($u['first_name'] . ' ' . $u['last_name']);
+
+    $pi = db()->prepare('SELECT image FROM products WHERE seller_id = ? AND image <> ""');
+    $pi->execute([$uid]);
+    $productImages = $pi->fetchAll(PDO::FETCH_COLUMN);
+
+    db()->beginTransaction();
+    try {
+        $rows = function (string $sql) use ($uid): array { $q = db()->prepare($sql); $q->execute([$uid]); return $q->fetchAll(); };
+        foreach ($rows('SELECT id, seller_id AS other FROM orders WHERE buyer_id = ? AND status = "pending"') as $r) {
+            notify((int)$r['other'], "Order #{$r['id']} was withdrawn because $name closed their account.", 'staff.php#orders');
+        }
+        foreach ($rows('SELECT id, buyer_id AS other FROM orders WHERE seller_id = ? AND status = "pending"') as $r) {
+            notify((int)$r['other'], "Your order #{$r['id']} was cancelled because the shop closed its account.", 'orders.php');
+        }
+        foreach ($rows('SELECT id, provider_id AS other FROM bookings WHERE client_id = ? AND status = "pending"') as $r) {
+            notify((int)$r['other'], "Booking request #{$r['id']} was withdrawn because $name closed their account.", 'staff.php#jobs');
+        }
+        foreach ($rows('SELECT id, client_id AS other FROM bookings WHERE provider_id = ? AND status = "pending"') as $r) {
+            notify((int)$r['other'], "Your booking request #{$r['id']} was cancelled because the provider closed their account.", 'bookings.php');
+        }
+        db()->prepare('DELETE FROM users WHERE id = ?')->execute([$uid]);
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) { db()->rollBack(); }
+        throw $e;
+    }
+    delete_avatar((string)($u['photo'] ?? ''));
+    delete_id_photo((string)($u['id_doc_file'] ?? ''));
+    foreach ($productImages as $img) { delete_product_image((string)$img); }
+}
+
+// Three-step progress bar for the ID review: uploaded -> admin review -> approved
+function id_progress_html(string $status): string {
+    $s2 = $status === 'approved' ? 'done' : ($status === 'rejected' ? 'bad' : 'current');
+    $s3 = $status === 'approved' ? 'done' : '';
+    return '<ol class="id-steps" aria-label="ID verification progress">'
+         . '<li class="done"><span>&#10003;</span> ID uploaded</li>'
+         . '<li class="' . $s2 . '"><span>' . ($s2 === 'done' ? '&#10003;' : ($s2 === 'bad' ? '&#10007;' : '2')) . '</span> Admin review</li>'
+         . '<li class="' . $s3 . '"><span>' . ($s3 === 'done' ? '&#10003;' : '3') . '</span> Approved</li></ol>';
+}
+
+// A small green check shown next to a verified client's name
+function verified_badge(): string {
+    return (($_SESSION['role'] ?? '') === 'client' && id_approved())
+        ? ' <span class="verified-check" title="ID verified" aria-label="ID verified">&#10003;</span>' : '';
+}
+
+// =====================================================================
+// FOLLOWING (shops, providers and clients can follow each other)
+// =====================================================================
+function is_following(int $otherId): bool {
+    if (empty($_SESSION['user_id'])) { return false; }
+    $st = db()->prepare('SELECT 1 FROM follows WHERE follower_id = ? AND followed_id = ?');
+    $st->execute([$_SESSION['user_id'], $otherId]);
+    return (bool)$st->fetchColumn();
+}
+function follower_count(int $uid): int  { $st = db()->prepare('SELECT COUNT(*) FROM follows WHERE followed_id = ?'); $st->execute([$uid]); return (int)$st->fetchColumn(); }
+function following_count(int $uid): int { $st = db()->prepare('SELECT COUNT(*) FROM follows WHERE follower_id = ?'); $st->execute([$uid]); return (int)$st->fetchColumn(); }
+
+// Shops and providers show their store name. Clients show first name and last initial only.
+function public_name(array $u): string {
+    if (($u['role'] ?? '') === 'staff') { return (string)($u['store'] ?? $u['first_name']); }
+    return trim($u['first_name'] . ' ' . mb_substr((string)$u['last_name'], 0, 1)) . '.';
+}
+function role_label(array $u): string {
+    if (($u['role'] ?? '') === 'staff') { return ($u['staff_type'] ?? '') === 'product' ? '🛍️ Product shop' : '🔧 Service provider'; }
+    return 'Client';
+}
+function notify_followers(int $uid, string $message, string $link = ''): void {
+    try {
+        $st = db()->prepare('SELECT follower_id FROM follows WHERE followed_id = ?');
+        $st->execute([$uid]);
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $fid) { notify((int)$fid, $message, $link); }
+    } catch (Throwable $e) {}
+}
+
+// =====================================================================
+// SHIPPING + VOUCHERS (discount, free shipping, earned by buying a lot or spending a lot)
+// =====================================================================
+function shipping_fee_for(float $subtotal): float {
+    return $subtotal >= (float)FREE_SHIPPING_MIN ? 0.0 : (float)SHIPPING_FEE;
+}
+function coupon_usable(array $c, float $sub): bool {
+    if ($c['used_order_id'] !== null) { return false; }
+    if ($c['expires_at'] && strtotime($c['expires_at']) < time()) { return false; }
+    return $sub >= (float)$c['min_spend'];
+}
+function coupon_discount(array $c, float $sub): float {
+    if ($c['type'] === 'percent') {
+        $d = $sub * (float)$c['value'] / 100;
+        if ($c['max_discount'] !== null) { $d = min($d, (float)$c['max_discount']); }
+    } elseif ($c['type'] === 'fixed') {
+        $d = (float)$c['value'];
+    } else { return 0.0; }
+    return round(min($d, $sub), 2);
+}
+// Vouchers in a user's wallet. $available = only the ones that can still be used.
+function my_coupons(int $uid, bool $available = true): array {
+    $sql = 'SELECT * FROM coupons WHERE user_id = ?'; $args = [$uid];
+    if ($available) { $sql .= ' AND used_order_id IS NULL AND (expires_at IS NULL OR expires_at > ?)'; $args[] = date('Y-m-d H:i:s'); }
+    $st = db()->prepare($sql . ' ORDER BY (used_order_id IS NULL) DESC, expires_at IS NULL, expires_at, id DESC');
+    $st->execute($args);
+    return $st->fetchAll();
+}
+// $c = ['type','value','min_spend','max_discount','label','days']. Returns true when a NEW voucher was given.
+function give_coupon(int $uid, array $c, ?string $rewardKey = null, ?int $codeId = null, string $source = 'reward'): bool {
+    $exp = !empty($c['days']) ? date('Y-m-d H:i:s', strtotime('+' . (int)$c['days'] . ' days')) : null;
+    $st = db()->prepare('INSERT IGNORE INTO coupons (user_id, type, value, min_spend, max_discount, label, source, reward_key, code_id, expires_at, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+    $st->execute([$uid, $c['type'], $c['value'] ?? 0, $c['min_spend'] ?? 0, $c['max_discount'] ?? null, $c['label'], $source, $rewardKey, $codeId, $exp, date('Y-m-d H:i:s')]);
+    return $st->rowCount() === 1;
+}
+// Rewards for buying a lot (orders, items) or spending a lot. Each reward is given once.
+function reward_rules(): array {
+    $d = (int)REWARD_VALID_DAYS;
+    return [
+        ['key' => 'orders_3',  'metric' => 'orders', 'target' => 3,   'type' => 'percent',  'value' => 10, 'min_spend' => 20,  'max_discount' => 10,   'days' => $d, 'label' => 'Loyal buyer: 10% off (up to ' . money(10) . ')'],
+        ['key' => 'orders_10', 'metric' => 'orders', 'target' => 10,  'type' => 'percent',  'value' => 15, 'min_spend' => 30,  'max_discount' => 25,   'days' => $d, 'label' => 'Super buyer: 15% off (up to ' . money(25) . ')'],
+        ['key' => 'items_10',  'metric' => 'items',  'target' => 10,  'type' => 'shipping', 'value' => 0,  'min_spend' => 0,   'max_discount' => null, 'days' => $d, 'label' => 'Bulk buyer: free shipping'],
+        ['key' => 'items_30',  'metric' => 'items',  'target' => 30,  'type' => 'fixed',    'value' => 10, 'min_spend' => 50,  'max_discount' => null, 'days' => $d, 'label' => 'Bulk buyer: ' . money(10) . ' off'],
+        ['key' => 'spend_100', 'metric' => 'spend',  'target' => 100, 'type' => 'fixed',    'value' => 8,  'min_spend' => 60,  'max_discount' => null, 'days' => $d, 'label' => 'Big spender: ' . money(8) . ' off'],
+        ['key' => 'spend_300', 'metric' => 'spend',  'target' => 300, 'type' => 'fixed',    'value' => 25, 'min_spend' => 150, 'max_discount' => null, 'days' => $d, 'label' => 'Big spender: ' . money(25) . ' off'],
+        ['key' => 'spend_500', 'metric' => 'spend',  'target' => 500, 'type' => 'shipping', 'value' => 0,  'min_spend' => 0,   'max_discount' => null, 'days' => $d, 'label' => 'VIP: free shipping'],
+    ];
+}
+// What the buyer has completed so far (delivered orders only)
+function reward_stats(int $uid): array {
+    $st = db()->prepare('SELECT COUNT(DISTINCT o.id) AS orders, COALESCE(SUM(i.quantity), 0) AS items, COALESCE(SUM(i.price * i.quantity), 0) AS spend
+                         FROM orders o JOIN order_items i ON i.order_id = o.id WHERE o.buyer_id = ? AND o.status = "delivered"');
+    $st->execute([$uid]);
+    return array_map('floatval', $st->fetch() ?: ['orders' => 0, 'items' => 0, 'spend' => 0]);
+}
+function award_rewards(int $uid): void {
+    try {
+        $stats = reward_stats($uid);
+        foreach (reward_rules() as $r) {
+            if ($stats[$r['metric']] >= $r['target'] && give_coupon($uid, $r, $r['key'])) {
+                notify($uid, '🎁 You earned a voucher: ' . $r['label'] . '. Find it in My vouchers.', 'vouchers.php');
+            }
+        }
+    } catch (Throwable $e) { error_log('award_rewards failed: ' . $e->getMessage()); }
+}
+
+// =====================================================================
+// FORGOT PASSWORD
+// =====================================================================
+// Makes a new 6-digit reset code for the reset waiting in the session and emails it to the account.
+// Unknown accounts get the same screens (user_id 0) but no email, so nobody can find out who is registered.
+function send_password_reset_code(): bool {
+    $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+    $_SESSION['pw_reset']['code_hash'] = hash('sha256', $code);
+    $_SESSION['pw_reset']['expires']   = time() + CODE_MINUTES * 60;
+    $_SESSION['pw_reset']['sent_at']   = time();
+    $_SESSION['pw_reset']['tries']     = 0;
+    unset($_SESSION['dev_reset_code']);
+    $r = $_SESSION['pw_reset'];
+    if (empty($r['user_id'])) { return true; }
+    if (SMTP_USER === '') { $_SESSION['dev_reset_code'] = $code; return true; }       // test mode: show the code on screen
+    return send_mail(
+        $r['email'],
+        'Your ' . SITE_NAME . ' password reset code',
+        "Hi {$r['first_name']},\n\nYour password reset code is: $code\n\nIt expires in " . CODE_MINUTES . " minutes. "
+        . "If you did not ask to reset your password, ignore this email and your password stays the same.\n\n- " . SITE_NAME
+    );
 }

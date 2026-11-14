@@ -10,6 +10,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pid = (int)($_POST['product_id'] ?? 0);
     $qty = max(1, min(99, (int)($_POST['quantity'] ?? 1)));
     $comment = mb_substr(trim($_POST['comment'] ?? ''), 0, 300);
+    if (in_array($act, ['add', 'buy', 'checkout'], true) && !id_approved()) {
+        flash(ID_BLOCK_MESSAGE);
+        header('Location: ' . ($act === 'checkout' ? 'cart.php' : 'product.php?id=' . $pid)); exit;
+    }
 
     $sizeLabel = ''; $colorLabel = '';
     if ($act === 'add' || $act === 'buy') {
@@ -47,7 +51,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $in = implode(',', array_fill(0, count($ids), '?'));
         $rows = db()->prepare("SELECT product_id, quantity AS qty, comment, size, color FROM cart_items WHERE user_id = ? AND id IN ($in)");
         $rows->execute(array_merge([$uid], $ids));
-        [$n, $err] = place_order($uid, $rows->fetchAll());
+        [$n, $err] = place_order($uid, $rows->fetchAll(), ['discount' => (int)($_POST['coupon_discount'] ?? 0), 'shipping' => (int)($_POST['coupon_shipping'] ?? 0)]);
         if ($err) { flash($err); header('Location: cart.php'); exit; }
         db()->prepare("DELETE FROM cart_items WHERE user_id = ? AND id IN ($in)")->execute(array_merge([$uid], $ids));
         flash($n === 1 ? 'Order sent. The shop needs to approve it.' : "Orders sent to $n shops. Each shop needs to approve its own order.");
@@ -62,6 +66,9 @@ $st->execute([$uid]);
 $items = $st->fetchAll();
 $groups = [];
 foreach ($items as $i) { $groups[$i['seller_id']]['store'] = $i['store']; $groups[$i['seller_id']]['items'][] = $i; }
+$wallet = my_coupons($uid);
+$discV = array_values(array_filter($wallet, fn($v) => $v['type'] !== 'shipping'));
+$shipV = array_values(array_filter($wallet, fn($v) => $v['type'] === 'shipping'));
 $me = db()->prepare('SELECT * FROM users WHERE id = ?'); $me->execute([$uid]); $me = $me->fetch();
 
 $panelTitle = 'My account';
@@ -89,6 +96,7 @@ $menu = buyer_menu();
         <div class="card cart-summary">
           <p><strong>Deliver to:</strong> <?= htmlspecialchars($me['address'] . ', ' . $me['city'] . ' ' . $me['postal_code']) ?> <a href="profile.php">(change)</a></p>
           <p><strong>Payment:</strong> <span class="badge badge-confirmed">Cash on Delivery (COD)</span> <span class="muted">Pay when your order arrives.</span></p>
+          <p><strong>Shipping:</strong> <?= money((float)SHIPPING_FEE) ?> for each shop. <span class="badge badge-confirmed">Free</span> when one shop's order is <?= money((float)FREE_SHIPPING_MIN) ?> or more. <a href="vouchers.php">My vouchers</a></p>
           <p class="muted">Tick the items you want to buy. Items from the same shop are ordered together. Items from different shops are separate orders.</p>
         </div>
 
@@ -136,7 +144,40 @@ $menu = buyer_menu();
             <?php endforeach; ?>
 
             <div class="shop-foot">
-              <span>Selected: <strong class="sel-count">0</strong> &middot; Total <strong class="price-lg sel-total">$0.00</strong></span>
+              <div class="summary">
+                <?php if ($discV || $shipV): ?>
+                  <div class="voucher-row">
+                    <?php if ($discV): ?>
+                      <label>&#127903;&#65039; Discount voucher
+                        <select name="coupon_discount" form="co-<?= (int)$sid ?>">
+                          <option value="0">None</option>
+                          <?php foreach ($discV as $cv): ?>
+                            <option value="<?= (int)$cv['id'] ?>" data-type="<?= $cv['type'] ?>" data-value="<?= $cv['value'] ?>" data-min="<?= $cv['min_spend'] ?>" data-max="<?= $cv['max_discount'] ?>"><?= htmlspecialchars($cv['label']) ?><?= (float)$cv['min_spend'] > 0 ? ' (min ' . money((float)$cv['min_spend']) . ')' : '' ?></option>
+                          <?php endforeach; ?>
+                        </select></label>
+                    <?php endif; ?>
+                    <?php if ($shipV): ?>
+                      <label>&#128666; Free shipping voucher
+                        <select name="coupon_shipping" form="co-<?= (int)$sid ?>">
+                          <option value="0">None</option>
+                          <?php foreach ($shipV as $cv): ?>
+                            <option value="<?= (int)$cv['id'] ?>" data-type="shipping" data-value="0" data-min="<?= $cv['min_spend'] ?>"><?= htmlspecialchars($cv['label']) ?><?= (float)$cv['min_spend'] > 0 ? ' (min ' . money((float)$cv['min_spend']) . ')' : '' ?></option>
+                          <?php endforeach; ?>
+                        </select></label>
+                    <?php endif; ?>
+                  </div>
+                <?php else: ?>
+                  <p class="muted">No vouchers yet. <a href="vouchers.php">See how to earn them</a></p>
+                <?php endif; ?>
+                <div class="sum-lines">
+                  <div><span>Selected items</span><span class="sel-count">0</span></div>
+                  <div><span>Subtotal</span><span class="sel-sub">$0.00</span></div>
+                  <div><span>Shipping</span><span class="sel-ship">$0.00</span></div>
+                  <div class="disc"><span>Voucher discount</span><span class="sel-disc">-$0.00</span></div>
+                  <div class="grand"><span>Total to pay (COD)</span><strong class="price-lg sel-total">$0.00</strong></div>
+                </div>
+                <p class="ship-hint muted"></p>
+              </div>
               <form id="co-<?= (int)$sid ?>" method="post">
                 <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="checkout">
                 <button class="btn btn-primary btn-lg place-btn" type="submit" disabled>Place order</button>
@@ -155,20 +196,39 @@ $menu = buyer_menu();
       st.querySelectorAll('.step-btn').forEach(b => b.addEventListener('click', () => { q.value = clamp((parseInt(q.value) || 1) + parseInt(b.dataset.step)); }));
       q.addEventListener('change', () => { q.value = clamp(parseInt(q.value)); });
     });
-    // Per shop: only ticked items count toward the total and the order.
-    const cur = <?= json_encode(CURRENCY) ?>;
+    // Per shop: only ticked items count. Shipping and vouchers are previewed here; the server works out the real amounts.
+    const cur = <?= json_encode(CURRENCY) ?>, FEE = <?= (float)SHIPPING_FEE ?>, FREE_MIN = <?= (float)FREE_SHIPPING_MIN ?>;
     const fmt = n => cur + n.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
     document.querySelectorAll('.shop-group').forEach(g => {
       const boxes = [...g.querySelectorAll('.pick')], all = g.querySelector('.pick-all');
+      const dSel = g.querySelector('select[name=coupon_discount]'), sSel = g.querySelector('select[name=coupon_shipping]');
+      const put = (cls, txt) => { g.querySelector(cls).textContent = txt; };
       const calc = () => {
-        let sum = 0, n = 0;
-        boxes.forEach(b => { if (b.checked) { sum += parseFloat(b.dataset.amount); n++; } });
-        g.querySelector('.sel-total').textContent = fmt(sum);
-        g.querySelector('.sel-count').textContent = n;
+        let sub = 0, n = 0;
+        boxes.forEach(b => { if (b.checked) { sub += parseFloat(b.dataset.amount); n++; } });
+        [dSel, sSel].forEach(sel => {      // a voucher needing a higher spend cannot be chosen yet
+          if (!sel) return;
+          [...sel.options].forEach(o => { if (o.value !== '0') o.disabled = sub < parseFloat(o.dataset.min); });
+          if (sel.selectedOptions[0].disabled) sel.value = '0';
+        });
+        let ship = (n > 0 && sub < FREE_MIN) ? FEE : 0;
+        if (ship > 0 && sSel && sSel.value !== '0') ship = 0;
+        let disc = 0;
+        if (dSel && dSel.value !== '0') {
+          const o = dSel.selectedOptions[0], v = parseFloat(o.dataset.value);
+          disc = o.dataset.type === 'percent' ? sub * v / 100 : v;
+          if (o.dataset.max) disc = Math.min(disc, parseFloat(o.dataset.max));
+          disc = Math.min(disc, sub);
+        }
+        put('.sel-count', n); put('.sel-sub', fmt(sub));
+        put('.sel-ship', n > 0 && ship === 0 ? 'FREE' : fmt(ship));
+        put('.sel-disc', '-' + fmt(disc)); put('.sel-total', fmt(sub + ship - disc));
+        g.querySelector('.ship-hint').textContent = (n > 0 && sub < FREE_MIN) ? 'Spend ' + fmt(FREE_MIN - sub) + ' more from this shop for free shipping' : '';
         g.querySelector('.place-btn').disabled = (n === 0);
         all.checked = (n === boxes.length && n > 0);
       };
       boxes.forEach(b => b.addEventListener('change', calc));
+      [dSel, sSel].forEach(sel => sel && sel.addEventListener('change', calc));
       all.addEventListener('change', () => { boxes.forEach(b => b.checked = all.checked); calc(); });
       calc();
     });

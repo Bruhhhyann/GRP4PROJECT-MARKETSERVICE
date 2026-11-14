@@ -1,7 +1,7 @@
 <?php /* expects $sp (a row from service_providers_sql) */ $spCats = provider_cats($sp); $spIcons = category_options('service'); ?>
 <article class="provider">
   <div class="avatar"><?= avatar_art($sp['photo'] ?? '', $sp['store']) ?></div>
-  <h3><?= htmlspecialchars($sp['store']) ?></h3>
+  <h3><a class="plain" href="user.php?id=<?= (int)$sp['id'] ?>"><?= htmlspecialchars($sp['store']) ?></a></h3>
   <p class="chips-mini">
     <?php foreach (array_slice($spCats, 0, 3) as $pc): ?><span class="chip-mini"><?= $spIcons[$pc] ?? '' ?> <?= htmlspecialchars($pc) ?></span><?php endforeach; ?>
     <?php if (count($spCats) > 3): ?><span class="muted">+<?= count($spCats) - 3 ?> more</span><?php endif; ?>

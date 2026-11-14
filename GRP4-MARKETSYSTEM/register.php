@@ -18,7 +18,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // The ID photo must be clear. A blurry photo is rejected and has to be uploaded again.
     [$idExt, $idErr] = check_id_photo($_FILES['id_photo'] ?? ['error' => UPLOAD_ERR_NO_FILE]);
-    if ($idErr) $errors[] = $idErr;
+    if ($idErr) { $errors[] = $idErr; }
+    elseif ($f['first_name'] !== '' && $f['last_name'] !== '') {
+        // If Tesseract is installed, the name on the ID must match the name typed above
+        $ocrErr = check_id_text($_FILES['id_photo']['tmp_name'], $f['first_name'], $f['last_name']);
+        if ($ocrErr) { $errors[] = $ocrErr; }
+    }
 
     if (!$errors) {
         try {
@@ -82,7 +87,7 @@ $v = fn($k) => htmlspecialchars($f[$k] ?? '');
 
         <div class="full id-upload">
           <span class="group-label">Prove you are a real person</span>
-          <p class="muted">Upload a clear photo of <strong>one</strong> valid document. Only a National ID or a Driver's License is accepted.</p>
+          <p class="muted">Upload a clear photo of <strong>one</strong> valid document: a National ID or a Driver's License, in your own name. An admin reviews every ID. You can browse right away, and you can order, book or apply once it is approved.</p>
           <div class="choice-row">
             <label class="choice"><input type="radio" name="id_type" value="national_id" <?= ($f['id_type'] ?? '') === 'national_id' ? 'checked' : '' ?>><span><strong>National ID</strong></span></label>
             <label class="choice"><input type="radio" name="id_type" value="drivers_license" <?= ($f['id_type'] ?? '') === 'drivers_license' ? 'checked' : '' ?>><span><strong>Driver's License</strong></span></label>
@@ -93,7 +98,7 @@ $v = fn($k) => htmlspecialchars($f[$k] ?? '');
           <p class="muted">Tips: good light, lay the ID flat, show the whole card, and make sure every word is readable. A blurry photo is rejected and you will need to upload it again. Only our admins can see it.</p>
         </div>
       </div>
-      <p class="muted hint-left">Your account is only created after your ID is accepted and you enter the code we email you.</p>
+      <p class="muted hint-left">Your account is created after you enter the code we email you. Your ID is then reviewed by an admin.</p>
       <button class="btn btn-primary btn-lg btn-block" type="submit">Register</button>
       <p class="muted hint">Already have an account? <a href="signin.php">Sign in</a></p>
     </form>

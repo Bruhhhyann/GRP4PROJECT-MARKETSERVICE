@@ -60,12 +60,14 @@ if ($p) {
         <div>
           <h1><?= htmlspecialchars($p['name']) ?></h1>
           <p class="muted seller-line"><span class="avatar-sm"><?= avatar_art($p['seller_photo'] ?? '', $p['store']) ?></span>
-            Sold by <strong><?= htmlspecialchars($p['store']) ?></strong> &middot; <?= htmlspecialchars($p['category']) ?></p>
+            Sold by <strong><a class="plain" href="user.php?id=<?= (int)$p['seller_id'] ?>"><?= htmlspecialchars($p['store']) ?></a></strong> &middot; <?= htmlspecialchars($p['category']) ?></p>
+          <?php $fuId = (int)$p['seller_id']; include __DIR__ . '/includes/follow-button.php'; ?>
           <?php if ((int)$p['review_count'] > 0): ?>
             <p class="rating-line"><a class="plain" href="#reviews"><?= stars_html((float)$p['avg_rating']) ?> <strong><?= number_format((float)$p['avg_rating'], 1) ?></strong>
               <span class="muted">(<?= (int)$p['review_count'] ?> review<?= (int)$p['review_count'] === 1 ? '' : 's' ?>)</span></a></p>
           <?php endif; ?>
           <p class="price-xl"><?= money((float)$p['price']) ?></p>
+          <p class="ship-note">&#128666; Shipping <?= money((float)SHIPPING_FEE) ?> &middot; <strong>Free</strong> on <?= money((float)FREE_SHIPPING_MIN) ?>+ from this shop</p>
           <p><?= $p['stock'] > 0 ? '<span class="badge badge-confirmed">' . (int)$p['stock'] . ' in stock</span>' : '<span class="badge badge-rejected">Sold out</span>' ?></p>
           <h2 class="small-h">About this product</h2>
           <p><?= nl2br(htmlspecialchars($p['description'] ?: 'No description yet.')) ?></p>
@@ -139,6 +141,7 @@ if ($p) {
                 <button class="btn btn-ghost btn-lg" name="action" value="add" type="submit">Add to cart</button>
               </div>
               <p class="pay-note"><span class="badge badge-confirmed">Cash on Delivery (COD)</span> Pay when your order arrives. COD is the only payment method.</p>
+              <p class="muted">Want to use a voucher? Add it to your cart and check out there.</p>
             </form>
           <?php endif; ?>
         </div>
@@ -177,7 +180,7 @@ if ($p) {
         <div class="card review">
           <div class="review-head">
             <?= stars_html((float)$rev['rating']) ?>
-            <strong><?= htmlspecialchars($rev['first_name'] . ' ' . mb_substr($rev['last_name'], 0, 1) . '.') ?></strong>
+            <a class="plain" href="user.php?id=<?= (int)$rev['user_id'] ?>"><strong><?= htmlspecialchars($rev['first_name'] . ' ' . mb_substr($rev['last_name'], 0, 1) . '.') ?></strong></a>
             <span class="badge badge-confirmed">Verified buyer</span>
             <span class="muted"><?= htmlspecialchars(date('M j, Y', strtotime($rev['created_at']))) ?></span>
           </div>

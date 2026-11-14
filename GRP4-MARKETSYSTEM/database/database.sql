@@ -26,6 +26,9 @@ CREATE TABLE IF NOT EXISTS users (
   service_about VARCHAR(600) NOT NULL DEFAULT '',        -- about text of a service provider
   id_doc_type   VARCHAR(20)  NOT NULL DEFAULT '',        -- 'national_id' or 'drivers_license' (set at registration)
   id_doc_file   VARCHAR(200) NOT NULL DEFAULT '',        -- file name inside /private/ids (only admins can view it)
+  id_status     ENUM('pending','approved','rejected') NOT NULL DEFAULT 'approved',   -- new clients start as 'pending' until an admin approves the ID
+  id_reviewed_at DATETIME NULL,
+  id_note       VARCHAR(200) NOT NULL DEFAULT '',        -- reason shown to the client when the ID is rejected
   created_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -117,6 +120,9 @@ CREATE TABLE IF NOT EXISTS orders (
   ship_contact   VARCHAR(140) NOT NULL,
   created_at     DATETIME NOT NULL,
   reviewed_at    DATETIME NULL,
+  shipping_fee   DECIMAL(10,2) NOT NULL DEFAULT 0,       -- 0 = free shipping
+  discount       DECIMAL(10,2) NOT NULL DEFAULT 0,       -- voucher discount
+  voucher_note   VARCHAR(200) NOT NULL DEFAULT '',
   delivery_days  TINYINT UNSIGNED NULL,                  -- set by the seller when approving
   approved_at    DATETIME NULL,
   delivered_at   DATETIME NULL,                          -- set when the buyer taps "Order received"
@@ -182,6 +188,52 @@ CREATE TABLE IF NOT EXISTS bookings (
   KEY by_provider (provider_id, booking_date),
   FOREIGN KEY (client_id)   REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (provider_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- ---------- Following (shops, providers and clients can follow each other) ----------
+CREATE TABLE IF NOT EXISTS follows (
+  follower_id INT UNSIGNED NOT NULL,
+  followed_id INT UNSIGNED NOT NULL,
+  created_at  DATETIME NOT NULL,
+  PRIMARY KEY (follower_id, followed_id),
+  KEY by_followed (followed_id),
+  FOREIGN KEY (follower_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (followed_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- ---------- Vouchers: a user's wallet, and codes an admin creates for clients to claim ----------
+CREATE TABLE IF NOT EXISTS coupons (
+  id            INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id       INT UNSIGNED NOT NULL,
+  type          ENUM('percent','fixed','shipping') NOT NULL,
+  value         DECIMAL(10,2) NOT NULL DEFAULT 0,
+  min_spend     DECIMAL(10,2) NOT NULL DEFAULT 0,
+  max_discount  DECIMAL(10,2) NULL,
+  label         VARCHAR(140) NOT NULL,
+  source        VARCHAR(20) NOT NULL DEFAULT 'reward',
+  reward_key    VARCHAR(40) NULL,
+  code_id       INT UNSIGNED NULL,
+  expires_at    DATETIME NULL,
+  used_order_id INT UNSIGNED NULL,
+  created_at    DATETIME NOT NULL,
+  UNIQUE KEY one_reward (user_id, reward_key),
+  UNIQUE KEY one_code (user_id, code_id),
+  KEY by_user (user_id, used_order_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS coupon_codes (
+  id           INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  code         VARCHAR(30) NOT NULL UNIQUE,
+  type         ENUM('percent','fixed','shipping') NOT NULL,
+  value        DECIMAL(10,2) NOT NULL DEFAULT 0,
+  min_spend    DECIMAL(10,2) NOT NULL DEFAULT 0,
+  max_discount DECIMAL(10,2) NULL,
+  label        VARCHAR(140) NOT NULL,
+  valid_days   INT UNSIGNED NOT NULL DEFAULT 30,
+  max_claims   INT UNSIGNED NULL,
+  claims       INT UNSIGNED NOT NULL DEFAULT 0,
+  active       TINYINT(1) NOT NULL DEFAULT 1,
+  created_at   DATETIME NOT NULL
 );
 
 -- =====================================================================

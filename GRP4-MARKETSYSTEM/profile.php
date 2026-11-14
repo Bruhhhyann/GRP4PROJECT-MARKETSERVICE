@@ -100,6 +100,12 @@ $menu = client_menu();
         <p class="muted">Changes need admin approval before they are saved to your profile.</p>
         <button class="btn btn-primary btn-lg" type="submit">Send for approval</button>
       </form>
+
+      <h2>Delete my account</h2>
+      <div class="card danger-zone">
+        <p class="muted">Permanently remove your account and all its data. This cannot be undone.</p>
+        <p><a class="btn btn-small btn-reject" href="delete-account.php">Delete my account</a></p>
+      </div>
     </main>
   </div>
 </body>

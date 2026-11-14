@@ -19,6 +19,7 @@ if ($sp && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $d = DateTime::createFromFormat('!Y-m-d', $v['date']);
     $today = new DateTime('today');
     if (!csrf_ok())                                         $errors[] = 'Session expired. Please try again.';
+    if (!id_approved())                                     $errors[] = ID_BLOCK_MESSAGE;
     if ((int)$sp['id'] === $uid)                            $errors[] = "You can't book yourself.";
     if (!in_array($v['service'], $cats, true))              $errors[] = 'Choose one of the services this provider offers.';
     if (!$d || $d->format('Y-m-d') !== $v['date'])          $errors[] = 'Choose a date.';
@@ -69,6 +70,7 @@ $icons = category_options('service');
         <div class="avatar-lg"><?= avatar_art($sp['photo'] ?? '', $sp['store']) ?></div>
         <div>
           <h1><?= htmlspecialchars($sp['store']) ?></h1>
+          <?php $fuId = (int)$sp['id']; include __DIR__ . '/includes/follow-button.php'; ?>
           <p class="chips-mini"><?php foreach ($cats as $pc): ?><span class="chip-mini"><?= $icons[$pc] ?? '' ?> <?= htmlspecialchars($pc) ?></span><?php endforeach; ?></p>
           <?php if ($sp['about']): ?><p><?= nl2br(htmlspecialchars($sp['about'])) ?></p><?php endif; ?>
           <p class="muted"><?= (int)$sp['done_jobs'] ?> job<?= (int)$sp['done_jobs'] === 1 ? '' : 's' ?> completed &middot;

@@ -21,6 +21,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (strlen($d['description']) < 20)                      $errors[] = 'Tell us a bit more about what you offer (at least 20 characters).';
     if (strlen($d['description']) > 600)                     $errors[] = 'Description is too long (600 characters max).';
     if (strlen($d['business_name']) > 120)                   $errors[] = 'Business name is too long.';
+    if (!id_approved())                                      $errors[] = ID_BLOCK_MESSAGE;
 
     if (!$errors) {
         db()->prepare('DELETE FROM provider_applications WHERE user_id = ? AND status = "pending"')->execute([$uid]);
@@ -34,6 +35,7 @@ $last = db()->prepare('SELECT * FROM provider_applications WHERE user_id = ? ORD
 $last->execute([$uid]);
 $last = $last->fetch();
 $pending = $last && $last['status'] === 'pending' ? $last : null;
+if (!$pending && !$errors && in_array($_GET['type'] ?? '', ['product', 'service'], true)) { $d['type'] = $_GET['type']; }
 $form = $errors ? $d : ($pending ?: $d);
 $h = fn($k) => htmlspecialchars((string)($form[$k] ?? ''));
 $checked = array_filter(explode(',', (string)($form['categories'] ?? '')));

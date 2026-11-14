@@ -7,7 +7,7 @@
   </nav>
   <div class="header-actions">
     <?php if (is_signed_in()): ?>
-      <span class="greeting">Hi, <?= htmlspecialchars($_SESSION['user']) ?></span>
+      <span class="greeting">Hi, <?= htmlspecialchars($_SESSION['user']) ?><?= verified_badge() ?></span>
       <a class="btn btn-ghost bell" href="notifications.php" aria-label="Notifications">&#128276;<?php if (($nc = notif_count()) > 0): ?><span class="bell-count"><?= $nc > 9 ? '9+' : $nc ?></span><?php endif; ?></a>
       <a class="btn btn-ghost" href="cart.php">Cart (<?= cart_count() ?>)</a>
       <a class="btn btn-primary" href="dashboard.php">Dashboard</a>
@@ -18,3 +18,4 @@
     <?php endif; ?>
   </div>
 </header>
+<?= id_banner() ?>

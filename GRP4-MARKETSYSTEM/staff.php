@@ -122,6 +122,7 @@ if ($type === 'product') {
                 } else { db()->rollBack(); }
             } else {
                 db()->prepare('UPDATE orders SET status = "rejected", reviewed_at = ? WHERE id = ?')->execute([date('Y-m-d H:i:s'), $oid]);
+                db()->prepare('UPDATE coupons SET used_order_id = NULL WHERE used_order_id = ?')->execute([$oid]);   // the voucher is returned
                 notify((int)$o['buyer_id'], 'Sorry, your order #' . $oid . ' from ' . store_name($uid) . ' was rejected by the shop.', 'orders.php#order-' . $oid);
                 $msg = 'Order #' . $oid . ' rejected. The buyer was told.';
             }
@@ -138,6 +139,7 @@ if ($type === 'product') {
                 db()->prepare('INSERT INTO products (seller_id, name, category, description, price, stock, colors, created_at) VALUES (?,?,?,?,?,?,?,?)')
                     ->execute([$uid, $n, $c, mb_substr($d, 0, 2000), $price, $stock, $pickedColors, date('Y-m-d H:i:s')]);
                 $newId = (int)db()->lastInsertId();
+                notify_followers($uid, store_name($uid) . ' added a new product: ' . $n, 'product.php?id=' . $newId);
                 [$photoPath, $photoErr] = save_product_image($_FILES['photo'] ?? ['error' => UPLOAD_ERR_NO_FILE], $newId);
                 if ($photoPath) { db()->prepare('UPDATE products SET image = ? WHERE id = ?')->execute([$photoPath, $newId]); }
                 $msg = 'Product added. It now shows in the shop.' . ($photoErr ? ' But the photo was not saved: ' . $photoErr : '');
@@ -219,8 +221,8 @@ if ($type === 'service') {
 
 $panelTitle = $type === 'product' ? 'Product seller' : 'Service provider';
 $menu = $type === 'product'
-    ? ['Overview' => '#overview', 'Orders to approve' => '#orders', 'Add a product' => '#add', 'My products' => '#products', 'My photo' => '#photo', 'My categories' => '#categories', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My purchases' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php']
-    : ['Overview' => '#overview', 'My jobs' => '#jobs', 'My service details' => '#details', 'My photo' => '#photo', 'My categories' => '#categories', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My purchases' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php'];
+    ? ['Overview' => '#overview', 'Orders to approve' => '#orders', 'Add a product' => '#add', 'My products' => '#products', 'My photo' => '#photo', 'My categories' => '#categories', 'Delete account' => '#account', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My purchases' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php', 'My vouchers' => 'vouchers.php', 'People' => 'people.php']
+    : ['Overview' => '#overview', 'My jobs' => '#jobs', 'My service details' => '#details', 'My photo' => '#photo', 'My categories' => '#categories', 'Delete account' => '#account', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My purchases' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php', 'My vouchers' => 'vouchers.php', 'People' => 'people.php'];
 $statusLabel = ['pending' => 'Pending', 'approved' => 'Approved', 'delivered' => 'Delivered', 'rejected' => 'Rejected'];
 $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', 'delivered' => 'badge-delivered', 'rejected' => 'badge-rejected'];
 ?>
@@ -238,6 +240,7 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
     <?php include __DIR__ . '/includes/sidebar.php'; ?>
     <main class="dash-main">
       <h1 id="overview"><?= $type === 'product' ? 'Product seller dashboard' : 'Service provider dashboard' ?></h1>
+      <p class="follow-line">&#128101; <a href="people.php?tab=followers"><strong><?= follower_count($uid) ?></strong> follower<?= follower_count($uid) === 1 ? '' : 's' ?></a> &middot; <a href="people.php?tab=following"><strong><?= following_count($uid) ?></strong> following</a> &middot; <a href="user.php?id=<?= $uid ?>">View my public page</a></p>
       <?php if ($msg): ?><p class="form-ok"><?= htmlspecialchars($msg) ?></p><?php endif; ?>
 
       <?php if ($type === 'product'): ?>
@@ -262,8 +265,15 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
                   <strong><?= money($it['price'] * $it['quantity']) ?></strong></li>
               <?php endforeach; ?>
             </ul>
-            <p class="order-foot"><span class="muted">Deliver to <?= htmlspecialchars($o['ship_address']) ?> &middot; <?= htmlspecialchars($o['ship_contact']) ?></span> <strong>Total <?= money($sum) ?></strong></p>
-            <p class="muted">Payment: Cash on Delivery. Collect <?= money($sum) ?> from the buyer when you deliver.</p>
+            <?php $grand = $sum + (float)$o['shipping_fee'] - (float)$o['discount']; ?>
+            <p class="muted">Deliver to <?= htmlspecialchars($o['ship_address']) ?> &middot; <?= htmlspecialchars($o['ship_contact']) ?></p>
+            <div class="totals">
+              <div><span>Items</span><span><?= money($sum) ?></span></div>
+              <div><span>Shipping</span><span><?= (float)$o['shipping_fee'] > 0 ? money((float)$o['shipping_fee']) : 'FREE' ?></span></div>
+              <?php if ((float)$o['discount'] > 0): ?><div class="disc"><span>Voucher discount (covered by AIOS)</span><span>-<?= money((float)$o['discount']) ?></span></div><?php endif; ?>
+              <div class="grand"><span>Collect from the buyer (COD)</span><strong><?= money($grand) ?></strong></div>
+            </div>
+            <?php if ($o['voucher_note']): ?><p class="muted">&#127903;&#65039; Vouchers used: <?= htmlspecialchars($o['voucher_note']) ?></p><?php endif; ?>
             <?php if ($o['status'] === 'pending'): ?>
               <form method="post" class="row-actions">
                 <input type="hidden" name="csrf" value="<?= csrf() ?>">
@@ -443,6 +453,12 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
           <button class="btn btn-primary btn-lg" type="submit">Request approval</button>
         </form>
       <?php endif; ?>
+
+      <h2 id="account">My account</h2>
+      <div class="card danger-zone">
+        <p class="muted">Permanently remove your account and everything that belongs to it. You can only do this when you have no approved orders or confirmed jobs left to finish.</p>
+        <p><a class="btn btn-small btn-reject" href="delete-account.php">Delete my account</a></p>
+      </div>
     </main>
   </div>
 </body>

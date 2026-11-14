@@ -19,6 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recei
             db()->prepare('UPDATE orders SET status = "delivered", delivered_at = ? WHERE id = ?')->execute([date('Y-m-d H:i:s'), $oid]);
             notify((int)$o['seller_id'], "Order #$oid was received by {$o['ship_name']}. It is now marked as delivered.", 'staff.php#orders');
             notify($uid, "Order #$oid is delivered. Please rate the products you received.", "orders.php#order-$oid");
+            award_rewards($uid);   // vouchers for buying a lot or spending a lot
             flash('Thanks! The shop was told your order arrived. You can now rate your products below.');
         }
     }
@@ -103,8 +104,16 @@ $menu = buyer_menu();
                 <strong><?= money($it['price'] * $it['quantity']) ?></strong></li>
             <?php endforeach; ?>
           </ul>
-          <p class="order-foot"><span class="muted">Deliver to <?= htmlspecialchars($o['ship_address']) ?></span> <strong>Total <?= money($sum) ?></strong></p>
-          <p class="muted">Payment: Cash on Delivery<?= $o['status'] === 'approved' ? '. Please prepare ' . money($sum) . ' for when it arrives.' : '.' ?></p>
+          <?php $grand = $sum + (float)$o['shipping_fee'] - (float)$o['discount']; ?>
+          <p class="muted">Deliver to <?= htmlspecialchars($o['ship_address']) ?></p>
+          <div class="totals">
+            <div><span>Subtotal</span><span><?= money($sum) ?></span></div>
+            <div><span>Shipping</span><span><?= (float)$o['shipping_fee'] > 0 ? money((float)$o['shipping_fee']) : 'FREE' ?></span></div>
+            <?php if ((float)$o['discount'] > 0): ?><div class="disc"><span>Voucher discount</span><span>-<?= money((float)$o['discount']) ?></span></div><?php endif; ?>
+            <div class="grand"><span>Total to pay (COD)</span><strong><?= money($grand) ?></strong></div>
+          </div>
+          <?php if ($o['voucher_note']): ?><p class="muted">&#127903;&#65039; Vouchers used: <?= htmlspecialchars($o['voucher_note']) ?></p><?php endif; ?>
+          <p class="muted">Payment: Cash on Delivery<?= $o['status'] === 'approved' ? '. Please prepare ' . money($grand) . ' for when it arrives.' : '.' ?></p>
 
           <?php if ($o['status'] === 'approved'): ?>
             <form method="post" class="received-form">

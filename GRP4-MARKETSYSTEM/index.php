@@ -38,7 +38,7 @@ try {   // the home page still loads even if the database is off
 
     <div class="header-actions">
       <?php if (is_signed_in()): ?>
-        <span class="greeting">Hi, <?= htmlspecialchars($_SESSION['user']) ?></span>
+        <span class="greeting">Hi, <?= htmlspecialchars($_SESSION['user']) ?><?= verified_badge() ?></span>
         <a class="btn btn-ghost bell" href="notifications.php" aria-label="Notifications">&#128276;<?php if (($nc = notif_count()) > 0): ?><span class="bell-count"><?= $nc > 9 ? '9+' : $nc ?></span><?php endif; ?></a>
         <a class="btn btn-ghost" href="cart.php">Cart (<?= cart_count() ?>)</a>
         <a class="btn btn-primary" href="dashboard.php">Dashboard</a>
@@ -49,9 +49,11 @@ try {   // the home page still loads even if the database is off
       <?php endif; ?>
     </div>
   </header>
+  <?= id_banner() ?>
+  <?php if (isset($_GET['deleted'])): ?><div class="id-banner ok">Your account was deleted. Thank you for using AIOS.</div><?php endif; ?>
 
   <main>
-    <!-- HERO: tagline on the left, vertically centered. Dashboard preview on the right. -->
+    <!-- HERO: tagline on the left, promo slider on the right -->
     <section class="hero">
       <div class="hero-copy">
         <h1>Shop with us.<br><span>Grow with us.</span></h1>
@@ -62,22 +64,7 @@ try {   // the home page still loads even if the database is off
         </div>
       </div>
 
-      <figure class="hero-visual">
-        <?php
-        // Shows your own photo if you put one in the "images" folder
-        // named worker.jpg, worker.jpeg, worker.png or worker.webp.
-        // If there is no photo, the drawn worker is shown instead.
-        $photo = null;
-        foreach (['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG'] as $ext) {
-            if (file_exists(__DIR__ . "/images/worker.$ext")) { $photo = "images/worker.$ext"; break; }
-        }
-        ?>
-        <?php if ($photo): ?>
-          <img src="<?= $photo ?>?v=<?= filemtime(__DIR__ . '/' . $photo) ?>" alt="Service worker">
-        <?php else: ?>
-          <?php include __DIR__ . '/includes/worker-art.php'; ?>
-        <?php endif; ?>
-      </figure>
+      <?php include __DIR__ . '/includes/hero-slider.php'; ?>
     </section>
 
     <!-- PRODUCTS -->

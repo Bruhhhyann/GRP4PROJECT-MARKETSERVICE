@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Nov 06, 2026 at 04:14 AM
+-- Generation Time: Nov 09, 2026 at 05:46 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.0.30
 
@@ -20,6 +20,34 @@ SET time_zone = "+00:00";
 --
 -- Database: `servicehub`
 --
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `bookings`
+--
+
+CREATE TABLE `bookings` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `client_id` int(10) UNSIGNED NOT NULL,
+  `provider_id` int(10) UNSIGNED NOT NULL,
+  `service` varchar(60) NOT NULL,
+  `booking_date` date NOT NULL,
+  `booking_time` time NOT NULL,
+  `address` varchar(300) NOT NULL,
+  `contact` varchar(140) NOT NULL,
+  `notes` varchar(500) DEFAULT NULL,
+  `status` enum('pending','confirmed','declined','completed','cancelled') NOT NULL DEFAULT 'pending',
+  `created_at` datetime NOT NULL,
+  `updated_at` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `bookings`
+--
+
+INSERT INTO `bookings` (`id`, `client_id`, `provider_id`, `service`, `booking_date`, `booking_time`, `address`, `contact`, `notes`, `status`, `created_at`, `updated_at`) VALUES
+(1, 2, 5, 'Home repair', '2026-11-09', '13:00:00', '12898, Santol ST. Homesite, Mabalacat City 2010', 'mendozabryan486@gmail.com', NULL, 'completed', '2026-11-09 05:34:31', '2026-11-09 05:35:37');
 
 -- --------------------------------------------------------
 
@@ -68,7 +96,12 @@ INSERT INTO `notifications` (`id`, `user_id`, `message`, `link`, `is_read`, `cre
 (1, 3, 'New order #2 from Bryan  Mendoza. Open Orders to approve it.', 'staff.php#orders', 1, '2026-11-06 03:12:44'),
 (2, 2, 'Good news! Your order #2 from OriShoes was approved. It should arrive in about 2 days (by Sun, Nov 8). Tap \"Order received\" when it arrives.', 'orders.php#order-2', 1, '2026-11-06 03:13:11'),
 (3, 3, 'Order #2 was received by Bryan  Mendoza. It is now marked as delivered.', 'staff.php#orders', 0, '2026-11-06 03:13:47'),
-(4, 2, 'Order #2 is delivered. Please rate the products you received.', 'orders.php#order-2', 0, '2026-11-06 03:13:47');
+(4, 2, 'Order #2 is delivered. Please rate the products you received.', 'orders.php#order-2', 1, '2026-11-06 03:13:47'),
+(5, 3, 'Order #1 was received by Bryan  Mendoza. It is now marked as delivered.', 'staff.php#orders', 0, '2026-11-09 05:24:12'),
+(6, 2, 'Order #1 is delivered. Please rate the products you received.', 'orders.php#order-1', 1, '2026-11-09 05:24:12'),
+(7, 5, 'New booking request #1 from Bryan: Home repair on Mon, Nov 9 at 1:00 PM.', 'staff.php#jobs', 0, '2026-11-09 05:34:31'),
+(8, 2, 'Your booking #1 with Jack off all Trades is confirmed for Mon, Nov 9, 2026 at 1:00 PM.', 'bookings.php', 1, '2026-11-09 05:35:32'),
+(9, 2, 'Your booking #1 with Jack off all Trades was marked as completed.', 'bookings.php', 1, '2026-11-09 05:35:37');
 
 -- --------------------------------------------------------
 
@@ -97,7 +130,7 @@ CREATE TABLE `orders` (
 --
 
 INSERT INTO `orders` (`id`, `buyer_id`, `seller_id`, `status`, `ship_name`, `ship_address`, `ship_contact`, `created_at`, `reviewed_at`, `payment_method`, `delivery_days`, `approved_at`, `delivered_at`) VALUES
-(1, 2, 3, 'approved', 'Bryan  Mendoza', '12898, Santol ST. Homesite, Mabalacat City 2010', 'mendozabryan486@gmail.com', '2026-10-31 09:17:56', '2026-10-31 09:21:07', 'COD', NULL, NULL, NULL),
+(1, 2, 3, 'delivered', 'Bryan  Mendoza', '12898, Santol ST. Homesite, Mabalacat City 2010', 'mendozabryan486@gmail.com', '2026-10-31 09:17:56', '2026-10-31 09:21:07', 'COD', NULL, NULL, '2026-11-09 05:24:12'),
 (2, 2, 3, 'delivered', 'Bryan  Mendoza', '12898, Santol ST. Homesite, Mabalacat City 2010', 'mendozabryan486@gmail.com', '2026-11-06 03:12:44', '2026-11-06 03:13:11', 'COD', 2, '2026-11-06 03:13:11', '2026-11-06 03:13:47');
 
 -- --------------------------------------------------------
@@ -209,13 +242,6 @@ CREATE TABLE `profile_changes` (
   `reviewed_by` int(10) UNSIGNED DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
---
--- Dumping data for table `profile_changes`
---
-
-INSERT INTO `profile_changes` (`id`, `user_id`, `first_name`, `middle_name`, `last_name`, `phone`, `address`, `city`, `postal_code`, `status`, `created_at`, `reviewed_at`, `reviewed_by`) VALUES
-(1, 3, 'LII', NULL, 'YunXiao', NULL, '12898, Santol ST. Homesite', 'Mabalacat City', '2010', 'approved', '2026-10-31 02:36:51', '2026-10-31 02:44:06', 4);
-
 -- --------------------------------------------------------
 
 --
@@ -228,19 +254,19 @@ CREATE TABLE `provider_applications` (
   `type` enum('service','product') NOT NULL,
   `business_name` varchar(120) NOT NULL,
   `description` varchar(600) NOT NULL,
+  `categories` varchar(400) NOT NULL DEFAULT '',
   `status` enum('pending','approved','rejected') NOT NULL DEFAULT 'pending',
   `created_at` datetime NOT NULL,
   `reviewed_at` datetime DEFAULT NULL,
-  `reviewed_by` int(10) UNSIGNED DEFAULT NULL,
-  `categories` varchar(400) NOT NULL DEFAULT ''
+  `reviewed_by` int(10) UNSIGNED DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `provider_applications`
 --
 
-INSERT INTO `provider_applications` (`id`, `user_id`, `type`, `business_name`, `description`, `status`, `created_at`, `reviewed_at`, `reviewed_by`, `categories`) VALUES
-(1, 3, 'product', 'OriShoes', 'Original branded shoes', 'approved', '2026-10-31 08:40:55', '2026-10-31 08:41:24', 4, '');
+INSERT INTO `provider_applications` (`id`, `user_id`, `type`, `business_name`, `description`, `categories`, `status`, `created_at`, `reviewed_at`, `reviewed_by`) VALUES
+(2, 5, 'service', 'Jack off all Trades', 'I can do all the thing i am Jack off all Trades', 'Home repair,Design & tech,Beauty & care,Tutoring,Events', 'approved', '2026-11-09 05:32:35', '2026-11-09 05:32:53', 4);
 
 -- --------------------------------------------------------
 
@@ -262,13 +288,18 @@ CREATE TABLE `provider_categories` (
 --
 
 INSERT INTO `provider_categories` (`id`, `user_id`, `category`, `status`, `created_at`, `reviewed_at`) VALUES
-(1, 3, 'Shoes', 'approved', '2026-10-31 08:50:16', '2026-10-31 08:50:16'),
-(2, 3, 'Shirts', 'approved', '2026-10-31 08:50:16', '2026-10-31 08:50:16'),
-(3, 3, 'Dresses', 'approved', '2026-10-31 08:50:16', '2026-10-31 08:50:16'),
-(4, 3, 'Bags', 'approved', '2026-10-31 08:50:16', '2026-10-31 08:50:16'),
-(5, 3, 'Caps & hats', 'approved', '2026-10-31 08:50:16', '2026-10-31 08:50:16'),
-(6, 3, 'Watches', 'approved', '2026-10-31 08:50:16', '2026-10-31 08:50:16'),
-(7, 3, 'Other', 'approved', '2026-10-31 08:50:16', '2026-10-31 08:50:16');
+(8, 3, 'Shoes', 'approved', '2026-11-06 04:42:03', '2026-11-06 04:42:03'),
+(9, 3, 'Shirts', 'approved', '2026-11-06 04:42:03', '2026-11-06 04:42:03'),
+(10, 3, 'Dresses', 'approved', '2026-11-06 04:42:03', '2026-11-06 04:42:03'),
+(11, 3, 'Bags', 'approved', '2026-11-06 04:42:03', '2026-11-06 04:42:03'),
+(12, 3, 'Caps & hats', 'approved', '2026-11-06 04:42:03', '2026-11-06 04:42:03'),
+(13, 3, 'Watches', 'approved', '2026-11-06 04:42:03', '2026-11-06 04:42:03'),
+(14, 3, 'Other', 'approved', '2026-11-06 04:42:03', '2026-11-06 04:42:03'),
+(15, 5, 'Home repair', 'approved', '2026-11-09 05:32:53', '2026-11-09 05:32:53'),
+(16, 5, 'Design & tech', 'approved', '2026-11-09 05:32:53', '2026-11-09 05:32:53'),
+(17, 5, 'Beauty & care', 'approved', '2026-11-09 05:32:53', '2026-11-09 05:32:53'),
+(18, 5, 'Tutoring', 'approved', '2026-11-09 05:32:53', '2026-11-09 05:32:53'),
+(19, 5, 'Events', 'approved', '2026-11-09 05:32:53', '2026-11-09 05:32:53');
 
 -- --------------------------------------------------------
 
@@ -306,18 +337,23 @@ CREATE TABLE `users` (
   `city` varchar(80) NOT NULL,
   `postal_code` varchar(12) DEFAULT NULL,
   `is_verified` tinyint(1) NOT NULL DEFAULT 0,
+  `photo` varchar(200) NOT NULL DEFAULT '',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `photo` varchar(200) NOT NULL DEFAULT ''
+  `id_doc_type` varchar(20) NOT NULL DEFAULT '',
+  `id_doc_file` varchar(200) NOT NULL DEFAULT '',
+  `service_rate` decimal(10,2) DEFAULT NULL,
+  `service_about` varchar(600) NOT NULL DEFAULT ''
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `users`
 --
 
-INSERT INTO `users` (`id`, `role`, `staff_type`, `first_name`, `middle_name`, `last_name`, `email`, `phone`, `password_hash`, `address`, `city`, `postal_code`, `is_verified`, `created_at`, `photo`) VALUES
-(2, 'client', NULL, 'Bryan', NULL, 'Mendoza', 'mendozabryan486@gmail.com', NULL, '$2y$10$.FDE.3D5OFN/1IDDhT9pfucZXGsiRDhnd3wWJ6ZJtiu0Rywy.3Qru', '12898, Santol ST. Homesite', 'Mabalacat City', '2010', 1, '2026-10-31 01:17:11', ''),
-(3, 'staff', 'product', 'LII', NULL, 'YunXiao', 'bryanmendoza6629@gmail.com', NULL, '$2y$10$JI5tVOekHPRplxKSy5.uIOfctSKcQ8L9yopQHFHIkLBIVH5IePgpS', '12898, Santol ST. Homesite', 'Mabalacat City', '2010', 1, '2026-10-31 01:18:30', ''),
-(4, 'admin', NULL, '', NULL, '', '9999', NULL, '$2y$12$ARzD/OiUMHVYrCEb85wCSeh/99M0A7rIWN5Mvb1k0TVEAcEs5A/ci', '', '', NULL, 1, '2026-10-31 01:34:21', '');
+INSERT INTO `users` (`id`, `role`, `staff_type`, `first_name`, `middle_name`, `last_name`, `email`, `phone`, `password_hash`, `address`, `city`, `postal_code`, `is_verified`, `photo`, `created_at`, `id_doc_type`, `id_doc_file`, `service_rate`, `service_about`) VALUES
+(2, 'client', NULL, 'Bryan', NULL, 'Mendoza', 'mendozabryan486@gmail.com', NULL, '$2y$10$.FDE.3D5OFN/1IDDhT9pfucZXGsiRDhnd3wWJ6ZJtiu0Rywy.3Qru', '12898, Santol ST. Homesite', 'Mabalacat City', '2010', 1, '', '2026-10-31 01:17:11', '', '', NULL, ''),
+(3, 'staff', 'product', 'LII', NULL, 'YunXiao', 'bryanmendoza6629@gmail.com', NULL, '$2y$10$JI5tVOekHPRplxKSy5.uIOfctSKcQ8L9yopQHFHIkLBIVH5IePgpS', '12898, Santol ST. Homesite', 'Mabalacat City', '2010', 1, '', '2026-10-31 01:18:30', '', '', NULL, ''),
+(4, 'admin', NULL, '', NULL, '', '9999', NULL, '$2y$12$ARzD/OiUMHVYrCEb85wCSeh/99M0A7rIWN5Mvb1k0TVEAcEs5A/ci', '', '', NULL, 1, '', '2026-10-31 01:34:21', '', '', NULL, ''),
+(5, 'staff', 'service', 'Shi', NULL, 'Ki', 'Shiragakitomura123@gmail.com', NULL, '$2y$10$8uN2e6bBhWEjGjgwbeSXa.SoS912lecjzmWGpHMspuqyFam4qi4Ri', '12898, Santol ST. Homesite', 'Mabalacat', '2010', 1, '', '2026-11-09 04:31:11', 'drivers_license', 'id-43b7bfb5ae7ba0449ce95e5e.png', NULL, '');
 
 -- --------------------------------------------------------
 
@@ -338,6 +374,14 @@ CREATE TABLE `verification_codes` (
 --
 -- Indexes for dumped tables
 --
+
+--
+-- Indexes for table `bookings`
+--
+ALTER TABLE `bookings`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `by_client` (`client_id`),
+  ADD KEY `by_provider` (`provider_id`,`booking_date`);
 
 --
 -- Indexes for table `cart_items`
@@ -426,6 +470,12 @@ ALTER TABLE `verification_codes`
 --
 
 --
+-- AUTO_INCREMENT for table `bookings`
+--
+ALTER TABLE `bookings`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+
+--
 -- AUTO_INCREMENT for table `cart_items`
 --
 ALTER TABLE `cart_items`
@@ -435,7 +485,7 @@ ALTER TABLE `cart_items`
 -- AUTO_INCREMENT for table `notifications`
 --
 ALTER TABLE `notifications`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT for table `orders`
@@ -465,13 +515,13 @@ ALTER TABLE `profile_changes`
 -- AUTO_INCREMENT for table `provider_applications`
 --
 ALTER TABLE `provider_applications`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `provider_categories`
 --
 ALTER TABLE `provider_categories`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
 
 --
 -- AUTO_INCREMENT for table `reviews`
@@ -483,7 +533,7 @@ ALTER TABLE `reviews`
 -- AUTO_INCREMENT for table `users`
 --
 ALTER TABLE `users`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `verification_codes`
@@ -494,6 +544,13 @@ ALTER TABLE `verification_codes`
 --
 -- Constraints for dumped tables
 --
+
+--
+-- Constraints for table `bookings`
+--
+ALTER TABLE `bookings`
+  ADD CONSTRAINT `bookings_ibfk_1` FOREIGN KEY (`client_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `bookings_ibfk_2` FOREIGN KEY (`provider_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `cart_items`
@@ -507,26 +564,6 @@ ALTER TABLE `cart_items`
 --
 ALTER TABLE `notifications`
   ADD CONSTRAINT `notifications_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
-
---
--- Constraints for table `orders`
---
-ALTER TABLE `orders`
-  ADD CONSTRAINT `orders_ibfk_1` FOREIGN KEY (`buyer_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `orders_ibfk_2` FOREIGN KEY (`seller_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
-
---
--- Constraints for table `order_items`
---
-ALTER TABLE `order_items`
-  ADD CONSTRAINT `order_items_ibfk_1` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `order_items_ibfk_2` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE SET NULL;
-
---
--- Constraints for table `products`
---
-ALTER TABLE `products`
-  ADD CONSTRAINT `products_ibfk_1` FOREIGN KEY (`seller_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `profile_changes`
@@ -545,19 +582,6 @@ ALTER TABLE `provider_applications`
 --
 ALTER TABLE `provider_categories`
   ADD CONSTRAINT `provider_categories_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
-
---
--- Constraints for table `reviews`
---
-ALTER TABLE `reviews`
-  ADD CONSTRAINT `reviews_ibfk_1` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `reviews_ibfk_2` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
-
---
--- Constraints for table `verification_codes`
---
-ALTER TABLE `verification_codes`
-  ADD CONSTRAINT `verification_codes_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

@@ -33,11 +33,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $dup = db()->prepare('SELECT id FROM users WHERE email = ? OR (? <> "" AND phone = ?)');
                 $dup->execute([$d['email'], $d['phone'], $d['phone']]);
                 if ($dup->fetch()) { delete_id_photo($d['id_file'] ?? ''); unset($_SESSION['pending_reg']); header('Location: signin.php'); exit; }
-                db()->prepare('INSERT INTO users (role, first_name, middle_name, last_name, email, phone, password_hash, address, city, postal_code, id_doc_type, id_doc_file, is_verified)
-                               VALUES ("client",?,?,?,?,?,?,?,?,?,?,?,1)')
+                db()->prepare('INSERT INTO users (role, first_name, middle_name, last_name, email, phone, password_hash, address, city, postal_code, id_doc_type, id_doc_file, id_status, is_verified)
+                               VALUES ("client",?,?,?,?,?,?,?,?,?,?,?,"pending",1)')
                     ->execute([$d['first_name'], $d['middle_name'] ?: null, $d['last_name'], $d['email'], $d['phone'] ?: null,
                                $d['password_hash'], $d['address'], $d['city'], $d['postal_code'] ?: null, $d['id_type'] ?? '', $d['id_file'] ?? '']);
                 $id = (int)db()->lastInsertId();
+                notify_admins('New client ' . $d['first_name'] . ' ' . $d['last_name'] . ' needs an ID review.', 'admin.php#id-review');
                 $u = db()->query("SELECT * FROM users WHERE id = $id")->fetch();
                 unset($_SESSION['pending_reg'], $_SESSION['dev_code']);
                 sign_in_user($u);
