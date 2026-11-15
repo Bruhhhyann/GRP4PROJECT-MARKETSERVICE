@@ -52,7 +52,7 @@ $menu = buyer_menu();
           <input type="search" name="q" value="<?= htmlspecialchars($q) ?>" placeholder="Search a shop, provider or person by name" aria-label="Search people" autofocus>
           <button class="btn btn-primary" type="submit">Search</button>
         </form>
-        <?php if (mb_strlen($q) < 2): ?><p class="muted">Type at least 2 letters of a name.</p><?php endif; ?>
+        
       <?php endif; ?>
 
       <?php if (!$list): ?>

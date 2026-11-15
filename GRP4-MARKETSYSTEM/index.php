@@ -87,7 +87,7 @@ try {   // the home page still loads even if the database is off
 
       <h3 class="subhead">Available now</h3>
       <?php if (!$featured): ?>
-        <p class="muted">No products yet. Product providers can add items from their dashboard.</p>
+        <p class="muted">No products yet.</p>
       <?php else: ?>
         <div class="product-grid">
           <?php foreach ($featured as $p) { include __DIR__ . '/includes/product-card.php'; } ?>
@@ -114,7 +114,7 @@ try {   // the home page still loads even if the database is off
     <section class="section" id="providers">
       <h2>Service providers</h2>
       <?php if (!$svcProviders): ?>
-        <p class="muted">No service providers yet. Clients can apply under <strong>Become a provider</strong>, and an admin approves them.</p>
+        <p class="muted">No service providers yet.</p>
       <?php else: ?>
         <div class="provider-grid">
           <?php foreach ($svcProviders as $sp) { include __DIR__ . '/includes/provider-card.php'; } ?>

@@ -42,7 +42,7 @@ try {
     <?php if ($dbError): ?>
       <p class="form-error">Could not load products. Is MySQL running?</p>
     <?php elseif (!$products): ?>
-      <p class="muted">No products found<?= $q !== '' ? ' for "' . htmlspecialchars($q) . '"' : '' ?>. Product providers can add items from their dashboard.</p>
+      <p class="muted">No products found<?= $q !== '' ? ' for "' . htmlspecialchars($q) . '"' : '' ?>.</p>
     <?php else: ?>
       <p class="muted"><?= count($products) ?> product<?= count($products) === 1 ? '' : 's' ?> found</p>
       <div class="product-grid">

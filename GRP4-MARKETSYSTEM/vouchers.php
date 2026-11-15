@@ -55,7 +55,6 @@ $menu = buyer_menu();
 
       <div class="card ship-card">
         <p><strong>&#128666; Shipping:</strong> <?= money((float)SHIPPING_FEE) ?> for each shop's order. <strong>Free</strong> when one shop's order is <?= money((float)FREE_SHIPPING_MIN) ?> or more.</p>
-        <p class="muted">Use vouchers in your cart. You can use one discount voucher and one free shipping voucher on each shop's order.</p>
       </div>
 
       <h2>Have a voucher code?</h2>
@@ -66,7 +65,7 @@ $menu = buyer_menu();
       </form>
 
       <h2>Available vouchers (<?= count($active) ?>)</h2>
-      <?php if (!$active): ?><p class="muted">No vouchers right now. Keep shopping to earn some, see below.</p><?php endif; ?>
+      <?php if (!$active): ?><p class="muted">No vouchers right now.</p><?php endif; ?>
       <div class="ticket-grid">
         <?php foreach ($active as $c): ?>
           <div class="ticket <?= $c['type'] === 'shipping' ? 'ship' : '' ?>">
@@ -81,7 +80,6 @@ $menu = buyer_menu();
 
       <h2>Earn more vouchers</h2>
       <div class="card earn-card">
-        <p class="muted">Vouchers are given automatically when your orders are delivered and you buy a lot or spend a lot.</p>
         <div class="earn-grid">
           <?php foreach (['orders' => 'Orders delivered', 'items' => 'Items bought', 'spend' => 'Total spent'] as $metric => $title): $val = $stats[$metric]; $r = $next[$metric] ?? null; ?>
             <div class="earn-item">

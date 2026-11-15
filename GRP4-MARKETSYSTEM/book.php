@@ -103,7 +103,6 @@ $icons = category_options('service');
             <div class="full"><label for="notes">Notes for the provider (optional)</label>
               <textarea id="notes" name="notes" rows="3" maxlength="500" placeholder="What do you need done? Anything they should bring or know?"><?= $h('notes') ?></textarea></div>
           </div>
-          <p class="muted">The provider has to confirm your request. You can cancel it any time under My bookings.</p>
           <button class="btn btn-primary btn-lg" type="submit">Send booking request</button>
         </form>
       <?php endif; ?>

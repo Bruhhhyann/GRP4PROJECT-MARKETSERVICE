@@ -229,11 +229,9 @@ $menu = ['Overview' => '#overview', 'ID verification' => '#id-review', 'Vouchers
           </tbody>
         </table>
       </div>
-      <p class="muted">Open the photo to check it is a real National ID or Driver's License, that it is readable, and that the name matches the account.</p>
       <?php endif; ?>
 
       <h2 id="vouchers">Voucher codes</h2>
-      <p class="muted">Clients earn vouchers automatically by buying a lot or spending a lot. Here you create codes anyone can claim under My vouchers (for sales and promos).</p>
       <form class="card dash-form" method="post">
         <input type="hidden" name="action" value="code_create"><input type="hidden" name="csrf" value="<?= $_SESSION['csrf'] ?>">
         <div class="form-grid">
@@ -395,7 +393,6 @@ $menu = ['Overview' => '#overview', 'ID verification' => '#id-review', 'Vouchers
           </tbody>
         </table>
       </div>
-      <p class="muted">Clients become staff (service or product provider) by applying; approve them in Provider applications above.</p>
     </main>
   </div>
 </body>

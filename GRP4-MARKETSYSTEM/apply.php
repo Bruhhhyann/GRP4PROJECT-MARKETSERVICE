@@ -59,7 +59,6 @@ $menu = client_menu();
     <?php include __DIR__ . '/includes/sidebar.php'; ?>
     <main class="dash-main">
       <h1>Become a provider</h1>
-      <p class="muted">Offer your services or sell your products on AIOS. An admin reviews every application.</p>
 
       <?php if (isset($_GET['sent'])): ?><p class="form-ok">Application sent. An admin will review it.</p><?php endif; ?>
       <?php if ($last && $last['status'] === 'rejected'): ?><p class="form-error">Your last application was rejected. You can update it and apply again.</p><?php endif; ?>
@@ -71,7 +70,6 @@ $menu = client_menu();
           <p><strong>Business</strong><?= htmlspecialchars($pending['business_name']) ?></p>
           <p><strong>Categories</strong><?= htmlspecialchars(str_replace(',', ', ', $pending['categories'])) ?></p>
           <p><strong>About</strong><?= htmlspecialchars($pending['description']) ?></p>
-          <p class="muted">Waiting for an admin. Once approved, click the Dashboard button.</p>
         </div>
       <?php endif; ?>
 
@@ -93,7 +91,6 @@ $menu = client_menu();
           <label class="group-label">Which services will you offer? Pick one or more.</label>
           <?php $pickerOptions = category_options('service'); $pickerChecked = $checked; include __DIR__ . '/includes/category-picker.php'; ?>
         </div>
-        <p class="muted" id="cats-note">Later, if you want to sell something you did not pick now, you apply for it and the admin approves it.</p>
 
         <label for="business_name">Business or shop name</label>
         <input id="business_name" name="business_name" maxlength="120" value="<?= $h('business_name') ?>" required>
@@ -113,7 +110,6 @@ $menu = client_menu();
         box.hidden = (t !== g);
         box.querySelectorAll('input').forEach(i => i.disabled = (t !== g));
       }
-      document.getElementById('cats-note').hidden = (t === '');
     }
     radios.forEach(r => r.addEventListener('change', sync));
     sync();

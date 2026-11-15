@@ -81,7 +81,6 @@ $menu = client_menu();
           <p><strong>Name</strong><?= $show($pending) ?></p>
           <p><strong>Phone</strong><?= htmlspecialchars($pending['phone'] ?: 'Not added') ?></p>
           <p><strong>Deliver to</strong><?= htmlspecialchars($pending['address'] . ', ' . $pending['city'] . ' ' . $pending['postal_code']) ?></p>
-          <p class="muted">Waiting for an admin. Your profile above stays the same until it is approved.</p>
         </div>
       <?php endif; ?>
 
@@ -98,7 +97,6 @@ $menu = client_menu();
           <div><label for="city">City</label><input id="city" name="city" value="<?= $v('city') ?>" required></div>
           <div><label for="postal_code">Postal code</label><input id="postal_code" name="postal_code" value="<?= $v('postal_code') ?>"></div>
         </div>
-        <p class="muted">Changes need admin approval before they are saved to your profile.</p>
         <button class="btn btn-primary btn-lg" type="submit">Send for approval</button>
       </form>
 

@@ -93,9 +93,8 @@ $menu = buyer_menu();
       <?php else: ?>
         <div class="card cart-summary">
           <p><strong>Deliver to:</strong> <?= htmlspecialchars($me['address'] . ', ' . $me['city'] . ' ' . $me['postal_code']) ?> <a href="profile.php">(change)</a></p>
-          <p><strong>Payment:</strong> <span class="badge badge-confirmed">Cash on Delivery (COD)</span> <span class="muted">Pay when your order arrives.</span></p>
+          <p><strong>Payment:</strong> <span class="badge badge-confirmed">Cash on Delivery (COD)</span></p>
           <p><strong>Shipping:</strong> <?= money((float)SHIPPING_FEE) ?> for each shop. <span class="badge badge-confirmed">Free</span> when one shop's order is <?= money((float)FREE_SHIPPING_MIN) ?> or more. <a href="vouchers.php">My vouchers</a></p>
-          <p class="muted">Tick the items you want to buy. Items from the same shop are ordered together. Items from different shops are separate orders.</p>
         </div>
 
         <?php foreach ($groups as $sid => $g): ?>
@@ -150,7 +149,6 @@ $menu = buyer_menu();
                   <div class="grand"><span>Total (before vouchers)</span><strong class="price-lg sel-total">$0.00</strong></div>
                 </div>
                 <p class="ship-hint muted"></p>
-                <p class="muted">Choose your vouchers on the next page.</p>
               </div>
               <form id="co-<?= (int)$sid ?>" method="post" action="checkout.php">
                 <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="checkout">

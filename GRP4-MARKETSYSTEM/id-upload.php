@@ -60,7 +60,6 @@ $menu = client_menu();
         <div class="card">
           <p><strong>Status:</strong> <?= $status === 'pending' ? '<span class="badge badge-pending">Being verified by an admin</span>' : '<span class="badge badge-rejected">Rejected</span>' ?></p>
           <?php if ($status === 'rejected' && $me['id_note']): ?><p>Reason: <?= htmlspecialchars($me['id_note']) ?></p><?php endif; ?>
-          <p class="muted">Upload a clear photo of your own National ID or Driver's License. You can replace the photo while it is waiting.</p>
         </div>
         <?php foreach ($errors as $e): ?><p class="form-error" role="alert"><?= htmlspecialchars($e) ?></p><?php endforeach; ?>
         <form class="card dash-form" method="post" enctype="multipart/form-data" novalidate>
@@ -71,7 +70,6 @@ $menu = client_menu();
           </div>
           <label for="id_photo">Photo of the document (JPG, PNG or WEBP, max 5 MB)</label>
           <input type="file" id="id_photo" name="id_photo" accept="image/jpeg,image/png,image/webp" required>
-          <p class="muted">Good light, the whole card in view, every word readable.</p>
           <button class="btn btn-primary btn-lg" type="submit">Send ID for review</button>
         </form>
       <?php endif; ?>

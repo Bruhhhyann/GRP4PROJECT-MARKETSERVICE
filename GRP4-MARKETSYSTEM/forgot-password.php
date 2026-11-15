@@ -42,7 +42,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <main class="auth-wrap">
     <form class="auth-card" method="post" novalidate>
       <h1>Forgot password?</h1>
-      <p class="muted">Enter the email or phone number of your account. We will email a 6-digit code that expires in <?= CODE_MINUTES ?> minutes.</p>
       <?php if ($error): ?><p class="form-error" role="alert"><?= htmlspecialchars($error) ?></p><?php endif; ?>
       <input type="hidden" name="csrf" value="<?= csrf() ?>">
       <label for="login">Email or phone</label>

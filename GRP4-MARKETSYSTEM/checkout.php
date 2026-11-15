@@ -140,7 +140,7 @@ $fullName = trim($me['first_name'] . ' ' . ($me['middle_name'] ?? '') . ' ' . $m
         <h2>&#128205; Delivery address</h2>
         <p><strong><?= htmlspecialchars($fullName) ?></strong> &middot; <?= htmlspecialchars($me['email'] ?: ($me['phone'] ?? '')) ?><br>
           <?= htmlspecialchars($me['address'] . ', ' . $me['city'] . ' ' . ($me['postal_code'] ?? '')) ?></p>
-        <p class="muted">This is the address on your profile. <a href="profile.php">Edit profile</a> (address changes need admin approval).</p>
+        <p><a href="profile.php">Edit profile</a></p>
       </section>
 
       <?php foreach ($groups as $sid => $g): ?>
@@ -193,8 +193,7 @@ $fullName = trim($me['first_name'] . ' ' . ($me['middle_name'] ?? '') . ' ' . $m
 
       <section class="card co-block">
         <h2>&#128179; Payment method</h2>
-        <label class="pay-option"><input type="radio" name="pay" value="cod" checked> <span><strong>Cash on Delivery (COD)</strong><br><span class="muted">Pay in cash when your order arrives. COD is the only payment method.</span></span></label>
-        <p class="muted">&#128230; The shop sets the delivery time when it approves your order. You can cancel the order from My orders until it is delivered.</p>
+        <label class="pay-option"><input type="radio" name="pay" value="cod" checked> <span><strong>Cash on Delivery (COD)</strong></span></label>
       </section>
 
       <section class="card co-block">

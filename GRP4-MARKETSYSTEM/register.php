@@ -71,14 +71,13 @@ $v = fn($k) => htmlspecialchars($f[$k] ?? '');
   <main class="auth-wrap">
     <form class="auth-card wide" method="post" enctype="multipart/form-data" novalidate>
       <h1>Create your account</h1>
-      <p class="muted">We'll check your ID, then send a verification code that expires in <?= CODE_MINUTES ?> minutes.</p>
       <?php foreach ($errors as $e): ?><p class="form-error" role="alert"><?= htmlspecialchars($e) ?></p><?php endforeach; ?>
 
       <div class="form-grid">
         <div><label for="first_name">First name</label><input id="first_name" name="first_name" value="<?= $v('first_name') ?>" required></div>
         <div><label for="middle_name">Middle name (optional)</label><input id="middle_name" name="middle_name" value="<?= $v('middle_name') ?>"></div>
         <div class="full"><label for="last_name">Last name</label><input id="last_name" name="last_name" value="<?= $v('last_name') ?>" required></div>
-        <div><label for="email">Email (we send your code here)</label><input type="email" id="email" name="email" value="<?= $v('email') ?>" required></div>
+        <div><label for="email">Email</label><input type="email" id="email" name="email" value="<?= $v('email') ?>" required></div>
         <div><label for="phone">Phone number (optional)</label><input type="tel" id="phone" name="phone" value="<?= $v('phone') ?>"></div>
         <div class="full"><label for="address">Address</label><input id="address" name="address" value="<?= $v('address') ?>" required></div>
         <div><label for="city">City</label><input id="city" name="city" value="<?= $v('city') ?>" required></div>
@@ -88,7 +87,6 @@ $v = fn($k) => htmlspecialchars($f[$k] ?? '');
 
         <div class="full id-upload">
           <span class="group-label">Prove you are a real person</span>
-          <p class="muted">Upload a clear photo of <strong>one</strong> valid document: a National ID or a Driver's License, in your own name. An admin reviews every ID. You can browse right away, and you can order, book or apply once it is approved.</p>
           <div class="choice-row">
             <label class="choice"><input type="radio" name="id_type" value="national_id" <?= ($f['id_type'] ?? '') === 'national_id' ? 'checked' : '' ?>><span><strong>National ID</strong></span></label>
             <label class="choice"><input type="radio" name="id_type" value="drivers_license" <?= ($f['id_type'] ?? '') === 'drivers_license' ? 'checked' : '' ?>><span><strong>Driver's License</strong></span></label>
@@ -96,10 +94,9 @@ $v = fn($k) => htmlspecialchars($f[$k] ?? '');
           <label for="id_photo">Photo of the document (JPG, PNG or WEBP, max 5 MB)</label>
           <input type="file" id="id_photo" name="id_photo" accept="image/jpeg,image/png,image/webp" required>
           <img id="id-preview" class="id-preview" alt="Preview of your document" hidden>
-          <p class="muted">Tips: good light, lay the ID flat, show the whole card, and make sure every word is readable. A blurry photo is rejected and you will need to upload it again. Only our admins can see it.</p>
+          <p class="muted">Good light, whole card in view, every word readable.</p>
         </div>
       </div>
-      <p class="muted hint-left">Your account is created after you enter the code we email you. Your ID is then reviewed by an admin.</p>
       <button class="btn btn-primary btn-lg btn-block" type="submit">Register</button>
       <p class="muted hint">Already have an account? <a href="signin.php">Sign in</a></p>
     </form>

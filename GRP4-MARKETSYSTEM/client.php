@@ -59,7 +59,7 @@ $menu = client_menu();
         </div>
         <?= id_progress_html($idst) ?>
         <?php if ($idst === 'pending'): ?>
-          <p class="muted">An admin is checking your <?= $me['id_doc_type'] === 'drivers_license' ? "Driver's License" : 'National ID' ?>. You can browse now. You can order, book and become a provider once it is approved. <a href="id-upload.php">See details</a></p>
+          <p class="muted">An admin is checking your <?= $me['id_doc_type'] === 'drivers_license' ? "Driver's License" : 'National ID' ?>. <a href="id-upload.php">See details</a></p>
         <?php elseif ($idst === 'rejected'): ?>
           <p><?= $me['id_note'] ? 'Reason: ' . htmlspecialchars($me['id_note']) . '.' : 'The admin could not accept this photo.' ?> <a class="btn btn-small" href="id-upload.php">Upload a new ID</a></p>
         <?php else: ?>

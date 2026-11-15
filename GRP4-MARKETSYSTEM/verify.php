@@ -67,7 +67,7 @@ $secondsLeft = max(0, $p['expires'] - time());
   <main class="auth-wrap">
     <div class="auth-card">
       <h1>Check your email</h1>
-      <p class="muted">We sent a 6-digit code to <strong><?= htmlspecialchars($p['data']['email']) ?></strong>. It expires in <span id="timer"><?= floor($secondsLeft / 60) ?>:<?= str_pad($secondsLeft % 60, 2, '0', STR_PAD_LEFT) ?></span>. Your account is created once you enter it.</p>
+      <p class="muted">We sent a 6-digit code to <strong><?= htmlspecialchars($p['data']['email']) ?></strong>. It expires in <span id="timer"><?= floor($secondsLeft / 60) ?>:<?= str_pad($secondsLeft % 60, 2, '0', STR_PAD_LEFT) ?></span>.</p>
 
       <?php if (SMTP_USER === '' && !empty($_SESSION['dev_code'])): ?>
         <p class="dev-code">Test mode (email not set up yet): your code is <strong><?= htmlspecialchars($_SESSION['dev_code']) ?></strong></p>

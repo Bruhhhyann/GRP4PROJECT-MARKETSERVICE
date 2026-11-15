@@ -112,7 +112,6 @@ if ($p) {
                       <tbody><?php foreach ($cfg['width'] as $w => $info): ?><tr><td><?= htmlspecialchars($w) ?></td><td><?= htmlspecialchars(ucfirst($info)) ?></td></tr><?php endforeach; ?></tbody>
                     <?php endif; ?>
                   </table>
-                  <p class="muted">Measurements are approximate and may differ by 1 to 2 cm.</p>
                 </details>
               <?php endif; ?>
 
@@ -141,8 +140,7 @@ if ($p) {
                 <button class="btn btn-primary btn-lg" name="action" value="buy" formaction="checkout.php" type="submit">Buy now</button>
                 <button class="btn btn-ghost btn-lg" name="action" value="add" type="submit">Add to cart</button>
               </div>
-              <p class="pay-note"><span class="badge badge-confirmed">Cash on Delivery (COD)</span> Pay when your order arrives. COD is the only payment method.</p>
-              <p class="muted">Next you review your order and can use vouchers before you confirm.</p>
+              <p class="pay-note"><span class="badge badge-confirmed">Cash on Delivery (COD)</span></p>
             </form>
           <?php endif; ?>
         </div>
@@ -171,7 +169,6 @@ if ($p) {
           <label for="rcomment">Your review (optional)</label>
           <textarea id="rcomment" name="comment" rows="3" maxlength="600" placeholder="How was the quality, fit and delivery?"><?= htmlspecialchars((string)($myReview['comment'] ?? '')) ?></textarea>
           <button class="btn btn-primary" type="submit"><?= $myReview ? 'Update review' : 'Post review' ?></button>
-          <p class="muted">Your review is shown to other buyers right away.</p>
         </form>
       <?php elseif ($isClient && !$isOwn): ?>
         <p class="review-note">&#128274; Only buyers who received this product can rate it. Buy it, then tap <strong>Order received</strong> when it arrives.</p>

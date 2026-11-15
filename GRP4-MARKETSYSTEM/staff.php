@@ -252,7 +252,7 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
         </div>
 
         <h2 id="orders">Orders to approve</h2>
-        <?php if (!$orders): ?><p class="muted">No orders yet. They appear here when a client buys your products.</p><?php endif; ?>
+        <?php if (!$orders): ?><p class="muted">No orders yet.</p><?php endif; ?>
         <?php foreach ($orders as $o): $sum = 0; ?>
           <div class="card order-card">
             <div class="order-head">
@@ -313,7 +313,6 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
                   <label class="opt-chip"><input type="checkbox" name="colors[]" value="<?= htmlspecialchars($cn) ?>"><span><i class="dot" style="background:<?= $hex ?>"></i><?= htmlspecialchars($cn) ?></span></label>
                 <?php endforeach; ?>
               </div>
-              <p class="muted">Tick the colors you sell. If you tick none, buyers see standard colors for this category.</p>
             </div>
           </div>
           <button class="btn btn-primary btn-lg" type="submit">Add product</button>
@@ -378,7 +377,7 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
         </div>
 
         <h2 id="jobs">My jobs</h2>
-        <?php if (!$jobs): ?><p class="muted">No booking requests yet. Clients can book you from the Book a service page.</p><?php endif; ?>
+        <?php if (!$jobs): ?><p class="muted">No booking requests yet.</p><?php endif; ?>
         <?php foreach ($jobs as $j): [$jl, $jc] = booking_badge($j['status'], true); ?>
           <div class="card order-card">
             <div class="order-head">
@@ -411,7 +410,6 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
             <div class="full"><label for="service_about">About your service</label>
               <textarea id="service_about" name="service_about" rows="3" maxlength="600" placeholder="Tell clients what you do, your experience, and the areas you cover."><?= htmlspecialchars((string)($mySvc['service_about'] ?? '')) ?></textarea></div>
           </div>
-          <p class="muted">Clients see this on the Book a service page, together with your photo and categories.</p>
           <button class="btn btn-primary" type="submit">Save details</button>
         </form>
       <?php endif; ?>
@@ -420,7 +418,7 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
       <div class="card photo-card">
         <div class="avatar-lg"><?= avatar_art($myPhoto, $_SESSION['user']) ?></div>
         <div>
-          <p class="muted"><?= $type === 'product' ? 'Shown next to your shop name on your product pages.' : 'Your service provider photo.' ?> JPG, PNG or WEBP, max 2 MB.</p>
+          <p class="muted">JPG, PNG or WEBP, max 2 MB.</p>
           <form method="post" enctype="multipart/form-data" class="photo-form">
             <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="set_avatar">
             <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" aria-label="New photo" required>
@@ -437,7 +435,6 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
 
       <h2 id="categories">My categories</h2>
       <div class="card">
-        <p class="muted"><?= $type === 'product' ? 'You can only list products in categories the admin approved.' : 'These are the services you are approved to offer.' ?></p>
         <div class="chips">
           <?php foreach ($rowsCat as $c => $st): if (!isset($opts[$c])) { continue; } ?>
             <span class="chip <?= $st === 'approved' ? 'on' : '' ?>"><?= $opts[$c] ?> <?= htmlspecialchars($c) ?><?= $st === 'pending' ? ' (waiting for approval)' : ($st === 'rejected' ? ' (rejected)' : '') ?></span>
@@ -458,7 +455,7 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
 
       <h2 id="account">My account</h2>
       <div class="card danger-zone">
-        <p class="muted">Permanently remove your account and everything that belongs to it. You can only do this when you have no approved orders or confirmed jobs left to finish.</p>
+        <p class="muted">Permanently remove your account and everything that belongs to it.</p>
         <p><a class="btn btn-small btn-reject" href="delete-account.php">Delete my account</a></p>
       </div>
     </main>

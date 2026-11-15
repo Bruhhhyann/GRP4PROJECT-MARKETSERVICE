@@ -42,7 +42,7 @@ try {
     <?php if ($dbError): ?>
       <p class="form-error">Could not load providers. Is MySQL running?</p>
     <?php elseif (!$list): ?>
-      <p class="muted">No service providers found. Clients can apply under <strong>Become a provider</strong>, and an admin approves them.</p>
+      <p class="muted">No service providers found.</p>
     <?php else: ?>
       <p class="muted"><?= count($list) ?> provider<?= count($list) === 1 ? '' : 's' ?> found</p>
       <div class="provider-grid">
