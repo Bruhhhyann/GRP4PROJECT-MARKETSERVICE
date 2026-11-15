@@ -69,10 +69,10 @@ $products = [
 ];
 
 // ---------- Database + auth (localhost XAMPP defaults) ----------
-const DB_HOST = 'localhost';
-const DB_NAME = 'servicehub';
-const DB_USER = 'root';
-const DB_PASS = '';            // XAMPP default is empty
+const DB_HOST = 'sql311.infinityfree.com';
+const DB_NAME = 'if0_43447497_db_marketplace';
+const DB_USER = 'if0_43447497';
+const DB_PASS = 'Bryan106'; 
 const CODE_MINUTES   = 15;     // verification code lifetime
 const RESEND_SECONDS = 30;     // wait before a new code can be sent
 
