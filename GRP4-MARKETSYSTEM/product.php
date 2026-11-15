@@ -33,6 +33,7 @@ if ($p) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><?= $p ? htmlspecialchars($p['name']) : 'Product' ?> | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
+  <?php include __DIR__ . '/includes/head-extra.php'; ?>
   <style>
     /* Star rating: one horizontal row, 1 to 5 stars */
     .review-form .star-input { display: flex; flex-direction: row-reverse; justify-content: flex-end; align-items: center; gap: .2rem; width: max-content; margin: .4rem 0 .3rem; }
@@ -137,11 +138,11 @@ if ($p) {
               <label for="comment">Comment for the seller (optional)</label>
               <textarea id="comment" name="comment" rows="3" maxlength="300" placeholder="Size, color, delivery notes..."></textarea>
               <div class="row-actions">
-                <button class="btn btn-primary btn-lg" name="action" value="buy" type="submit">Buy now</button>
+                <button class="btn btn-primary btn-lg" name="action" value="buy" formaction="checkout.php" type="submit">Buy now</button>
                 <button class="btn btn-ghost btn-lg" name="action" value="add" type="submit">Add to cart</button>
               </div>
               <p class="pay-note"><span class="badge badge-confirmed">Cash on Delivery (COD)</span> Pay when your order arrives. COD is the only payment method.</p>
-              <p class="muted">Want to use a voucher? Add it to your cart and check out there.</p>
+              <p class="muted">Next you review your order and can use vouchers before you confirm.</p>
             </form>
           <?php endif; ?>
         </div>

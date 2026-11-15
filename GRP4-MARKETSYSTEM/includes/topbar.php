@@ -1,21 +1,73 @@
 <header class="site-header">
-  <a class="brand" href="index.php"><span class="brand-mark" aria-hidden="true">A</span><?= SITE_NAME ?></a>
-  <nav class="main-nav" aria-label="Main">
+  <button class="menu-toggle" type="button"
+          aria-label="Open menu" aria-expanded="false"
+          aria-controls="siteNav">
+    <span></span><span></span><span></span>
+  </button>
+
+  <a class="brand" href="index.php">
+    <span class="brand-mark" aria-hidden="true">A</span><?= SITE_NAME ?>
+  </a>
+
+  <nav class="main-nav" id="siteNav" aria-label="Main menu" hidden>
     <a href="index.php">Home</a>
     <a href="shop.php">Shop products</a>
     <a href="providers.php">Book services</a>
-  </nav>
-  <div class="header-actions">
+
     <?php if (is_signed_in()): ?>
-      <span class="greeting">Hi, <?= htmlspecialchars($_SESSION['user']) ?><?= verified_badge() ?></span>
-      <a class="btn btn-ghost bell" href="notifications.php" aria-label="Notifications">&#128276;<?php if (($nc = notif_count()) > 0): ?><span class="bell-count"><?= $nc > 9 ? '9+' : $nc ?></span><?php endif; ?></a>
-      <a class="btn btn-ghost" href="cart.php">Cart (<?= cart_count() ?>)</a>
-      <a class="btn btn-primary" href="dashboard.php">Dashboard</a>
-      <a class="btn btn-ghost" href="signin.php?action=signout">Sign out</a>
+      <a href="dashboard.php">Dashboard</a>
+      <a href="notifications.php">
+        Notifications
+        <?php if (($nc = notif_count()) > 0): ?>
+          <span class="menu-count"><?= $nc > 9 ? '9+' : $nc ?></span>
+        <?php endif; ?>
+      </a>
+      <a href="cart.php">Cart (<?= cart_count() ?>)</a>
+      <a href="signin.php?action=signout">Sign out</a>
     <?php else: ?>
-      <a class="btn btn-ghost" href="register.php">Register</a>
-      <a class="btn btn-primary" href="signin.php">Sign in</a>
+      <a href="register.php">Register</a>
+      <a href="signin.php">Sign in</a>
     <?php endif; ?>
-  </div>
+  </nav>
 </header>
+
 <?= id_banner() ?>
+
+<script>
+(() => {
+  const header = document.querySelector('.site-header');
+  if (!header) return;
+
+  const toggle = header.querySelector('.menu-toggle');
+  const menu = header.querySelector('#siteNav');
+  if (!toggle || !menu) return;
+
+  const closeMenu = () => {
+    menu.hidden = true;
+    toggle.setAttribute('aria-expanded', 'false');
+    toggle.setAttribute('aria-label', 'Open menu');
+  };
+
+  toggle.addEventListener('click', () => {
+    const isOpen = toggle.getAttribute('aria-expanded') === 'true';
+    menu.hidden = isOpen;
+    toggle.setAttribute('aria-expanded', String(!isOpen));
+    toggle.setAttribute('aria-label', isOpen ? 'Open menu' : 'Close menu');
+  });
+
+  menu.addEventListener('click', event => {
+    if (event.target.closest('a')) closeMenu();
+  });
+
+  document.addEventListener('click', event => {
+    if (!header.contains(event.target)) closeMenu();
+  });
+
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      closeMenu();
+      toggle.focus();
+    }
+  });
+})();
+</script>

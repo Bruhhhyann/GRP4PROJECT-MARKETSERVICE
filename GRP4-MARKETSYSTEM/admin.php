@@ -176,7 +176,7 @@ $idPending = db()->query('SELECT id, first_name, last_name, email, phone, id_doc
 $codes = db()->query('SELECT * FROM coupon_codes ORDER BY id DESC LIMIT 50')->fetchAll();
 
 $panelTitle = 'Admin panel';
-$menu = ['Overview' => '#overview', 'ID verification' => '#id-review', 'Vouchers' => '#vouchers', 'Profile requests' => '#requests', 'Provider applications' => '#applications', 'Category requests' => '#category-requests', 'Manage users' => '#users', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My orders' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php'];
+$menu = ['Overview' => '#overview', 'ID verification' => '#id-review', 'Vouchers' => '#vouchers', 'Profile requests' => '#requests', 'Provider applications' => '#applications', 'Category requests' => '#category-requests', 'Manage users' => '#users', 'Shop products' => 'shop.php', 'My cart' => 'cart.php', 'My orders' => 'orders.php', 'Book a service' => 'providers.php', 'My bookings' => 'bookings.php', 'Open on phone' => 'phone-access.php'];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -185,6 +185,7 @@ $menu = ['Overview' => '#overview', 'ID verification' => '#id-review', 'Vouchers
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Admin dashboard | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
+  <?php include __DIR__ . '/includes/head-extra.php'; ?>
 </head>
 <body>
   <?php include __DIR__ . '/includes/topbar.php'; ?>

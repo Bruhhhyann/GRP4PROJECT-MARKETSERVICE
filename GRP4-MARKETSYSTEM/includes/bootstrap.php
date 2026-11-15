@@ -270,7 +270,7 @@ function product_sql(): string {
 }
 
 function ensure_shop_tables(): void {
-    if (!empty($_SESSION['shop_ready11'])) { return; }
+    if (!empty($_SESSION['shop_ready12'])) { return; }
     ensure_provider_applications_table();
     $sql = [
 "CREATE TABLE IF NOT EXISTS products (
@@ -384,7 +384,14 @@ function ensure_shop_tables(): void {
       min_spend DECIMAL(10,2) NOT NULL DEFAULT 0, max_discount DECIMAL(10,2) NULL, label VARCHAR(140) NOT NULL,
       valid_days INT UNSIGNED NOT NULL DEFAULT 30, max_claims INT UNSIGNED NULL, claims INT UNSIGNED NOT NULL DEFAULT 0,
       active TINYINT(1) NOT NULL DEFAULT 1, created_at DATETIME NOT NULL)");
-    $_SESSION['shop_ready11'] = true;
+    // Buyers can cancel an order: new status and the reason
+    $col2 = db()->query("SHOW COLUMNS FROM orders LIKE 'status'")->fetch();
+    if ($col2 && !str_contains($col2['Type'], 'cancelled')) {
+        db()->exec("ALTER TABLE orders MODIFY status ENUM('pending','approved','delivered','rejected','cancelled') NOT NULL DEFAULT 'pending'");
+    }
+    add_column_if_missing('orders', 'cancel_reason', "VARCHAR(160) NOT NULL DEFAULT ''");
+    add_column_if_missing('orders', 'cancelled_at', 'DATETIME NULL');
+    $_SESSION['shop_ready12'] = true;
 }
 
 function cart_count(): int {
@@ -428,8 +435,9 @@ function place_order(int $buyerId, array $lines, array $pick = []): array {
         $sub = 0.0;
         foreach ($items as $it) { $sub += (float)$it[0]['price'] * $it[1]; }
         $ship = shipping_fee_for($sub); $disc = 0.0; $use = []; $notes = [];
+        $pk = (isset($pick[$sellerId]) && is_array($pick[$sellerId])) ? $pick[$sellerId] : $pick;   // vouchers chosen for this shop
         foreach (['shipping', 'discount'] as $kind) {
-            $cid = (int)($pick[$kind] ?? 0);
+            $cid = (int)($pk[$kind] ?? 0);
             if (!$cid || isset($claimed[$cid])) { continue; }
             $cs = db()->prepare('SELECT * FROM coupons WHERE id = ? AND user_id = ?');
             $cs->execute([$cid, $buyerId]);
@@ -1054,4 +1062,39 @@ function send_password_reset_code(): bool {
         "Hi {$r['first_name']},\n\nYour password reset code is: $code\n\nIt expires in " . CODE_MINUTES . " minutes. "
         . "If you did not ask to reset your password, ignore this email and your password stays the same.\n\n- " . SITE_NAME
     );
+}
+
+// =====================================================================
+// CANCEL ORDER (buyer, while the order is waiting or approved but not delivered yet)
+// =====================================================================
+function cancel_reasons(): array {
+    return ['Changed my mind', 'Wrong size, color or item', 'Found a better price', 'Delivery takes too long', 'Ordered by mistake', 'Other'];
+}
+// Returns '' on success, or an error message.
+function cancel_order(int $orderId, int $buyerId, string $reason): string {
+    if (!in_array($reason, cancel_reasons(), true)) { return 'Choose a reason for cancelling.'; }
+    $st = db()->prepare('SELECT * FROM orders WHERE id = ? AND buyer_id = ? AND status IN ("pending","approved")');
+    $st->execute([$orderId, $buyerId]);
+    $o = $st->fetch();
+    if (!$o) { return 'This order can no longer be cancelled.'; }
+    db()->beginTransaction();
+    try {
+        if ($o['status'] === 'approved') {            // stock was taken when the shop approved it: give it back
+            $its = db()->prepare('SELECT product_id, quantity FROM order_items WHERE order_id = ? AND product_id IS NOT NULL');
+            $its->execute([$orderId]);
+            foreach ($its->fetchAll() as $it) {
+                db()->prepare('UPDATE products SET stock = stock + ? WHERE id = ?')->execute([$it['quantity'], $it['product_id']]);
+            }
+        }
+        $u = db()->prepare('UPDATE orders SET status = "cancelled", cancel_reason = ?, cancelled_at = ? WHERE id = ? AND status IN ("pending","approved")');
+        $u->execute([$reason, date('Y-m-d H:i:s'), $orderId]);
+        if ($u->rowCount() !== 1) { throw new RuntimeException('changed'); }
+        db()->prepare('UPDATE coupons SET used_order_id = NULL WHERE used_order_id = ?')->execute([$orderId]);   // vouchers come back
+        db()->commit();
+    } catch (Throwable $e) {
+        if (db()->inTransaction()) { db()->rollBack(); }
+        return 'Could not cancel the order. Please try again.';
+    }
+    notify((int)$o['seller_id'], "Order #$orderId was cancelled by {$o['ship_name']}. Reason: $reason.", 'staff.php#orders');
+    return '';
 }

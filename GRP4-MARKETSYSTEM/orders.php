@@ -26,6 +26,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'recei
     header('Location: orders.php'); exit;
 }
 
+// The buyer cancels an order (waiting for the shop, or approved but not delivered yet)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cancel_order') {
+    if (!csrf_ok()) { flash('Session expired. Please try again.'); }
+    else {
+        $cerr = cancel_order((int)($_POST['order_id'] ?? 0), $uid, (string)($_POST['reason'] ?? ''));
+        flash($cerr ?: 'Your order was cancelled. Any voucher you used was returned to your wallet.');
+    }
+    header('Location: orders.php'); exit;
+}
+
 $st = db()->prepare('SELECT o.*, ' . store_expr('o.seller_id', 'u.first_name') . ' AS store FROM orders o JOIN users u ON u.id = o.seller_id
                      WHERE o.buyer_id = ? ORDER BY o.id DESC LIMIT 50');
 $st->execute([$uid]);
@@ -39,8 +49,8 @@ $myRatings = db()->prepare('SELECT product_id, rating FROM reviews WHERE user_id
 $myRatings->execute([$uid]);
 $myRatings = $myRatings->fetchAll(PDO::FETCH_KEY_PAIR);
 
-$statusLabel = ['pending' => 'Pending seller approval', 'approved' => 'Approved', 'delivered' => 'Delivered', 'rejected' => 'Rejected'];
-$statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', 'delivered' => 'badge-delivered', 'rejected' => 'badge-rejected'];
+$statusLabel = ['pending' => 'Pending seller approval', 'approved' => 'Approved', 'delivered' => 'Delivered', 'rejected' => 'Rejected', 'cancelled' => 'Cancelled'];
+$statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', 'delivered' => 'badge-delivered', 'rejected' => 'badge-rejected', 'cancelled' => 'badge-rejected'];
 
 // "Arrives in about 3 days (by Mon, Nov 9)"
 function eta_text(array $o): string {
@@ -62,6 +72,7 @@ $menu = buyer_menu();
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>My orders | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
+  <?php include __DIR__ . '/includes/head-extra.php'; ?>
 </head>
 <body>
   <?php include __DIR__ . '/includes/topbar.php'; ?>
@@ -90,6 +101,9 @@ $menu = buyer_menu();
             </div>
           <?php endif; ?>
 
+          <?php if ($o['status'] === 'cancelled'): ?>
+            <div class="eta-box bad">&#10060; You cancelled this order<?= $o['cancelled_at'] ? ' on ' . htmlspecialchars(date('M j, g:i A', strtotime($o['cancelled_at']))) : '' ?>.<?= $o['cancel_reason'] ? ' Reason: ' . htmlspecialchars($o['cancel_reason']) . '.' : '' ?></div>
+          <?php endif; ?>
           <ul class="order-lines">
             <?php foreach ($items[$o['id']] ?? [] as $it): $sum += $it['price'] * $it['quantity']; ?>
               <li><span><?= (int)$it['quantity'] ?> &times; <?= htmlspecialchars($it['name']) ?><?php if ($it['size']): ?> <span class="size-tag"><?= htmlspecialchars($it['size']) ?></span><?php endif; ?><?php if ($it['color']): ?> <span class="size-tag"><i class="dot" style="background:<?= color_hex($it['color']) ?>"></i><?= htmlspecialchars($it['color']) ?></span><?php endif; ?>
@@ -121,6 +135,17 @@ $menu = buyer_menu();
               <input type="hidden" name="order_id" value="<?= (int)$o['id'] ?>">
               <button class="btn btn-primary" type="submit" onclick="return confirm('Did you receive this order?');">Order received</button>
               <span class="muted">Tap this when your order arrives. The shop will be told.</span>
+            </form>
+          <?php endif; ?>
+
+          <?php if (in_array($o['status'], ['pending', 'approved'], true)): ?>
+            <form method="post" class="cancel-form" onsubmit="return confirm('Cancel this order?');">
+              <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="cancel_order"><input type="hidden" name="order_id" value="<?= (int)$o['id'] ?>">
+              <select name="reason" required aria-label="Reason for cancelling">
+                <option value="">Reason for cancelling</option>
+                <?php foreach (cancel_reasons() as $cr): ?><option><?= htmlspecialchars($cr) ?></option><?php endforeach; ?>
+              </select>
+              <button class="btn btn-small btn-reject" type="submit">Cancel order</button>
             </form>
           <?php endif; ?>
         </div>

@@ -36,6 +36,7 @@ $menu = client_menu();
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>My account | AIOS</title>
   <link rel="stylesheet" href="css/style.css">
+  <?php include __DIR__ . '/includes/head-extra.php'; ?>
 </head>
 <body>
   <?php include __DIR__ . '/includes/topbar.php'; ?>

@@ -19,6 +19,7 @@ try {   // the home page still loads even if the database is off
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
+  <?php include __DIR__ . '/includes/head-extra.php'; ?>
 </head>
 <body>
 
@@ -29,7 +30,7 @@ try {   // the home page still loads even if the database is off
       <?= SITE_NAME ?>
     </a>
 
-    <nav class="main-nav" aria-label="Main">
+    <nav class="main-nav" id="siteNav" aria-label="Main">
       <a href="index.php">Dashboard</a>
       <a href="shop.php">Shop products</a>
       <a href="providers.php">Book services</a>
@@ -38,16 +39,17 @@ try {   // the home page still loads even if the database is off
 
     <div class="header-actions">
       <?php if (is_signed_in()): ?>
-        <span class="greeting">Hi, <?= htmlspecialchars($_SESSION['user']) ?><?= verified_badge() ?></span>
+        <span class="greeting m-hide">Hi, <?= htmlspecialchars($_SESSION['user']) ?><?= verified_badge() ?></span>
         <a class="btn btn-ghost bell" href="notifications.php" aria-label="Notifications">&#128276;<?php if (($nc = notif_count()) > 0): ?><span class="bell-count"><?= $nc > 9 ? '9+' : $nc ?></span><?php endif; ?></a>
         <a class="btn btn-ghost" href="cart.php">Cart (<?= cart_count() ?>)</a>
-        <a class="btn btn-primary" href="dashboard.php">Dashboard</a>
-        <a class="btn btn-ghost" href="signin.php?action=signout">Sign out</a>
+        <a class="btn btn-primary m-hide" href="dashboard.php">Dashboard</a>
+        <a class="btn btn-ghost m-hide" href="signin.php?action=signout">Sign out</a>
       <?php else: ?>
-        <a class="btn btn-ghost" href="register.php">Register</a>
+        <a class="btn btn-ghost m-hide" href="register.php">Register</a>
         <a class="btn btn-primary" href="signin.php">Sign in</a>
       <?php endif; ?>
     </div>
+  <button class="menu-toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="siteNav">&#9776;</button>
   </header>
   <?= id_banner() ?>
   <?php if (isset($_GET['deleted'])): ?><div class="id-banner ok">Your account was deleted. Thank you for using AIOS.</div><?php endif; ?>

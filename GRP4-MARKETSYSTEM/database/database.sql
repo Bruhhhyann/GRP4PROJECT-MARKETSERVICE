@@ -113,7 +113,7 @@ CREATE TABLE IF NOT EXISTS orders (
   id             INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   buyer_id       INT UNSIGNED NOT NULL,
   seller_id      INT UNSIGNED NOT NULL,
-  status         ENUM('pending','approved','delivered','rejected') NOT NULL DEFAULT 'pending',
+  status         ENUM('pending','approved','delivered','rejected','cancelled') NOT NULL DEFAULT 'pending',
   payment_method VARCHAR(20) NOT NULL DEFAULT 'COD',     -- Cash on Delivery is the only method
   ship_name      VARCHAR(160) NOT NULL,
   ship_address   VARCHAR(300) NOT NULL,
@@ -123,6 +123,8 @@ CREATE TABLE IF NOT EXISTS orders (
   shipping_fee   DECIMAL(10,2) NOT NULL DEFAULT 0,       -- 0 = free shipping
   discount       DECIMAL(10,2) NOT NULL DEFAULT 0,       -- voucher discount
   voucher_note   VARCHAR(200) NOT NULL DEFAULT '',
+  cancel_reason  VARCHAR(160) NOT NULL DEFAULT '',        -- why the buyer cancelled
+  cancelled_at   DATETIME NULL,
   delivery_days  TINYINT UNSIGNED NULL,                  -- set by the seller when approving
   approved_at    DATETIME NULL,
   delivered_at   DATETIME NULL,                          -- set when the buyer taps "Order received"
