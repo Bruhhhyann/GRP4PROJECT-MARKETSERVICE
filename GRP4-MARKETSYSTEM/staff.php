@@ -302,7 +302,7 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
             <div class="full"><label for="pname">Product name</label><input id="pname" name="name" maxlength="120" required></div>
             <div><label for="pcat">Category</label>
               <select id="pcat" name="category"><?php foreach ($myCats as $c): ?><option><?= htmlspecialchars($c) ?></option><?php endforeach; ?></select></div>
-            <div><label for="pstock">Stocks</label><input id="pstock" name="stock" type="number" min="0" value="10" required></div>
+            <div><label for="pstock">Stock (how many available)</label><input id="pstock" name="stock" type="number" min="0" value="10" required></div>
             <div><label for="pprice">Price</label><input id="pprice" name="price" type="number" min="0.01" step="0.01" required></div>
             <div class="full"><label for="pphoto">Product photo (JPG, PNG or WEBP, max 2 MB)</label>
               <input id="pphoto" name="photo" type="file" accept="image/jpeg,image/png,image/webp"></div>
@@ -323,6 +323,7 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
         <form method="post" class="sample-form">
           <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="load_samples">
           <button class="btn btn-small btn-light" type="submit">Add sample products (for testing)</button>
+          <span class="muted">Adds 5 example products for each category you are approved for.</span>
         </form>
         <?php if (!$mine): ?><p class="muted">You have not added any products yet.</p><?php else: ?>
         <div class="table-wrap"><table class="tbl">
@@ -419,6 +420,7 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
       <div class="card photo-card">
         <div class="avatar-lg"><?= avatar_art($myPhoto, $_SESSION['user']) ?></div>
         <div>
+          <p class="muted"><?= $type === 'product' ? 'Shown next to your shop name on your product pages.' : 'Your service provider photo.' ?> JPG, PNG or WEBP, max 2 MB.</p>
           <form method="post" enctype="multipart/form-data" class="photo-form">
             <input type="hidden" name="csrf" value="<?= csrf() ?>"><input type="hidden" name="action" value="set_avatar">
             <input type="file" name="photo" accept="image/jpeg,image/png,image/webp" aria-label="New photo" required>
@@ -435,6 +437,7 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
 
       <h2 id="categories">My categories</h2>
       <div class="card">
+        <p class="muted"><?= $type === 'product' ? 'You can only list products in categories the admin approved.' : 'These are the services you are approved to offer.' ?></p>
         <div class="chips">
           <?php foreach ($rowsCat as $c => $st): if (!isset($opts[$c])) { continue; } ?>
             <span class="chip <?= $st === 'approved' ? 'on' : '' ?>"><?= $opts[$c] ?> <?= htmlspecialchars($c) ?><?= $st === 'pending' ? ' (waiting for approval)' : ($st === 'rejected' ? ' (rejected)' : '') ?></span>
@@ -455,9 +458,8 @@ $statusClass = ['pending' => 'badge-pending', 'approved' => 'badge-confirmed', '
 
       <h2 id="account">My account</h2>
       <div class="card danger-zone">
-<p class="muted" style="color: red;">
-  Permanently remove your account and everything that belongs to it. You can only do this when you have no approved orders or confirmed jobs left to finish.
-</p>        <p><a class="btn btn-small btn-reject" href="delete-account.php">Delete my account</a></p>
+        <p class="muted">Permanently remove your account and everything that belongs to it. You can only do this when you have no approved orders or confirmed jobs left to finish.</p>
+        <p><a class="btn btn-small btn-reject" href="delete-account.php">Delete my account</a></p>
       </div>
     </main>
   </div>
